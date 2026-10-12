@@ -100,6 +100,20 @@ public class ViewerActivity extends Activity {
                 Toast.makeText(ViewerActivity.this, "Descargando a la galería (carpeta Subelo)", Toast.LENGTH_SHORT).show();
             }
         });
+        top.addView(Brutal.button(this, "↦", Brutal.PAPER, Brutal.BLACK, new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (files.isEmpty()) return;
+                startActivityForResult(new Intent(ViewerActivity.this, FolderActivity.class)
+                        .putExtra(FolderActivity.EXTRA_PICK, files.get(index).dir), REQ_MOVE);
+            }
+        }), Brutal.spaced(this, -2, -2, 0));
+        top.addView(Brutal.button(this, "🗑", 0xFFE5322D, Brutal.SNOW, new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                confirmDelete();
+            }
+        }), Brutal.spaced(this, -2, -2, 0));
         top.addView(dl, Brutal.spaced(this, -2, -2, 0));
         root.addView(top, new FrameLayout.LayoutParams(-1, -2, Gravity.TOP));
 
@@ -159,6 +173,79 @@ public class ViewerActivity extends Activity {
         File[] old = new File(getCacheDir(), "visor").listFiles();
         if (old != null) for (File f : old) f.delete();
         super.onDestroy();
+    }
+
+    private static final int REQ_MOVE = 1;
+
+    private void confirmDelete() {
+        if (files.isEmpty()) return;
+        final BoxClient.RemoteFile f = files.get(index);
+        new android.app.AlertDialog.Builder(this)
+                .setTitle("¿Borrar del disco?")
+                .setMessage("Vas a borrar «" + f.name + "».\n\nNo se puede deshacer.")
+                .setPositiveButton("Borrar", new android.content.DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(android.content.DialogInterface d, int w) {
+                        change(f, null);
+                    }
+                })
+                .setNegativeButton("Cancelar", null)
+                .show();
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode != REQ_MOVE || resultCode != RESULT_OK || data == null || files.isEmpty()) return;
+        final BoxClient.RemoteFile f = files.get(index);
+        final String to = data.getStringExtra("path");
+        if (to == null || to.equals(f.dir)) return;
+        new android.app.AlertDialog.Builder(this)
+                .setTitle("¿Mover?")
+                .setMessage("«" + f.name + "» irá a DISCO:/" + Prefs.user(this) + "/" + to)
+                .setPositiveButton("Mover", new android.content.DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(android.content.DialogInterface d, int w) {
+                        change(f, to);
+                    }
+                })
+                .setNegativeButton("Cancelar", null)
+                .show();
+    }
+
+    /** Borra (to == null) o mueve la foto y la quita del visor. */
+    private void change(final BoxClient.RemoteFile f, final String to) {
+        bg.execute(new Runnable() {
+            @Override
+            public void run() {
+                String err = null;
+                try {
+                    if (to == null) bc.delete(f.dir, Collections.singletonList(f.name));
+                    else bc.move(f.dir, Collections.singletonList(f.name), to);
+                } catch (IOException e) {
+                    err = e.getMessage();
+                }
+                final String msg = err;
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (msg != null) {
+                            Toast.makeText(ViewerActivity.this, msg, Toast.LENGTH_LONG).show();
+                            return;
+                        }
+                        Toast.makeText(ViewerActivity.this, to == null ? "Borrada" : "Movida", Toast.LENGTH_SHORT).show();
+                        int i = files.indexOf(f);
+                        if (i >= 0) files.remove(i);
+                        if (files.isEmpty()) {
+                            finish();
+                            return;
+                        }
+                        if (index >= files.size()) index = files.size() - 1;
+                        show();
+                    }
+                });
+            }
+        });
     }
 
     private void step(int d) {

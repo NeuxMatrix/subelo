@@ -73,6 +73,15 @@ abstract class Store {
 
     abstract Upload begin(Object dir, String name) throws IOException;
 
+    /** Borra un fichero o una carpeta con todo lo que tenga. */
+    abstract void delete(Object dir, String name) throws IOException;
+
+    /** Mueve un fichero o carpeta a otra carpeta; si allí ya hay uno con ese nombre, le pone otro. Devuelve el nombre final. */
+    abstract String move(Object from, String name, Object to) throws IOException;
+
+    /** Cambia el nombre; devuelve false si ya existe otro con el nombre nuevo. */
+    abstract boolean rename(Object dir, String name, String newName) throws IOException;
+
     abstract long free();
 
     abstract long total();

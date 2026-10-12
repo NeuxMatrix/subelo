@@ -22,9 +22,13 @@ import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-/** Navegador de carpetas del disco del box, para elegir dónde se guardan las fotos. */
+/**
+ * Navegador de carpetas del disco del box, para elegir dónde se guardan las fotos o, con
+ * {@link #EXTRA_PICK}, a dónde mover algo (devuelve la carpeta en el extra «path»).
+ */
 public class FolderActivity extends Activity {
     private static final String UP = "↑  SUBIR UN NIVEL";
+    static final String EXTRA_PICK = "pick";
 
     private final ExecutorService bg = Executors.newSingleThreadExecutor();
     private final List<String> items = new ArrayList<String>();
@@ -37,7 +41,8 @@ public class FolderActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         Brutal.apply(this);
         super.onCreate(savedInstanceState);
-        path = Prefs.dest(this);
+        final boolean pick = getIntent().hasExtra(EXTRA_PICK);
+        path = pick ? getIntent().getStringExtra(EXTRA_PICK) : Prefs.dest(this);
         int pad = dp(16);
 
         LinearLayout col = new LinearLayout(this);
@@ -45,7 +50,7 @@ public class FolderActivity extends Activity {
         col.setBackgroundColor(Brutal.CREAM);
         col.setPadding(pad, pad, pad - dp(6), pad);
 
-        TextView title = Brutal.title(this, "Elige carpeta", 24, Brutal.INK);
+        TextView title = Brutal.title(this, pick ? "Mover a…" : "Elige carpeta", 24, Brutal.INK);
         title.setPadding(0, 0, 0, dp(10));
         col.addView(title);
         pathText = Brutal.mono(this, 13, Brutal.PAPER);
@@ -95,9 +100,14 @@ public class FolderActivity extends Activity {
                 newFolder();
             }
         });
-        Button use = Brutal.button(this, "✓ Usar esta", Brutal.ORANGE, Brutal.BLACK, new View.OnClickListener() {
+        Button use = Brutal.button(this, pick ? "✓ Mover aquí" : "✓ Usar esta", Brutal.ORANGE, Brutal.BLACK, new View.OnClickListener() {
             @Override
             public void onClick(View v) {
+                if (pick) {
+                    setResult(RESULT_OK, new android.content.Intent().putExtra("path", path));
+                    finish();
+                    return;
+                }
                 Prefs.setDest(FolderActivity.this, path);
                 setResult(RESULT_OK);
                 finish();

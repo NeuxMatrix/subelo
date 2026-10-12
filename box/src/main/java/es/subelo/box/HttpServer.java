@@ -477,6 +477,66 @@ final class HttpServer {
             json(out, 200, o);
         } else if (path.equals("/api/places")) {
             send(out, 200, "application/json; charset=utf-8", Places.json(ctx, st, user).getBytes(UTF8));
+        } else if (path.equals("/api/delete") || path.equals("/api/move") || path.equals("/api/rename")) {
+            if (!method.equals("POST")) {
+                error(out, 405, "Usa POST");
+                return;
+            }
+            Object d = st.dir(dirRel, false);
+            if (d == null) {
+                error(out, 404, "La carpeta no existe");
+                return;
+            }
+            for (String n : names) {
+                if (!existingName(n)) {
+                    error(out, 400, "Nombre no válido: " + n);
+                    return;
+                }
+            }
+            if (names.isEmpty()) {
+                error(out, 400, "No has elegido nada");
+                return;
+            }
+            JSONObject o = new JSONObject();
+            if (path.equals("/api/delete")) {
+                int ok = 0;
+                for (String n : names) {
+                    st.delete(d, n);
+                    ok++;
+                }
+                o.put("deleted", ok);
+            } else if (path.equals("/api/move")) {
+                String to = cleanPath(params.get("to"));
+                for (String n : names) {
+                    String moved = rel.isEmpty() ? n : rel + "/" + n;
+                    if (to.equals(rel)) {
+                        error(out, 400, "Ya está en esa carpeta");
+                        return;
+                    }
+                    if (to.equals(moved) || to.startsWith(moved + "/")) {
+                        error(out, 400, "No puedes mover la carpeta «" + n + "» dentro de sí misma");
+                        return;
+                    }
+                }
+                Object dest = st.dir(to.isEmpty() ? user : user + "/" + to, true);
+                JSONArray arr = new JSONArray();
+                for (String n : names) arr.put(st.move(d, n, dest));
+                o.put("moved", arr);
+                o.put("to", to);
+            } else {
+                String nn = cleanName(params.get("new"));
+                if (nn == null || names.size() != 1) {
+                    error(out, 400, "Falta el nombre nuevo");
+                    return;
+                }
+                if (!st.rename(d, names.get(0), nn)) {
+                    error(out, 409, "Ya hay algo llamado «" + nn + "» en esta carpeta");
+                    return;
+                }
+                o.put("name", nn);
+            }
+            o.put("ok", true);
+            json(out, 200, o);
         } else if (path.equals("/api/zip")) {
             zip(st, dirRel, names, out);
         } else {
@@ -793,6 +853,12 @@ final class HttpServer {
             sb.append(s);
         }
         return sb.toString();
+    }
+
+    /** Nombre de algo que ya existe en la carpeta: sin barras ni «..». */
+    static boolean existingName(String n) {
+        return n != null && !n.isEmpty() && !n.equals(".") && !n.equals("..") && n.indexOf('/') < 0
+                && n.indexOf('\\') < 0 && n.indexOf('\0') < 0;
     }
 
     static String cleanName(String n) {

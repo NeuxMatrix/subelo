@@ -261,6 +261,72 @@ final class SafStore extends Store {
         };
     }
 
+    private Entry entry(String dirId, String name) throws IOException {
+        Entry e = list(dirId, true).byName.get(name);
+        if (e == null) throw new IOException("No existe " + name);
+        return e;
+    }
+
+    @Override
+    synchronized void delete(Object dir, String name) throws IOException {
+        Entry e = entry((String) dir, name);
+        try {
+            if (!DocumentsContract.deleteDocument(cr, docUri(e.id))) throw new IOException("No se pudo borrar " + name);
+        } catch (IOException x) {
+            throw x;
+        } catch (Exception x) {
+            throw new IOException("No se pudo borrar " + name, x);
+        } finally {
+            cache.clear();
+        }
+    }
+
+    @Override
+    synchronized String move(Object from, String name, Object to) throws IOException {
+        if (android.os.Build.VERSION.SDK_INT < 24) throw new IOException("Este box no permite mover archivos");
+        String fromId = (String) from, toId = (String) to;
+        Entry e = entry(fromId, name);
+        Uri doc = docUri(e.id);
+        String target = name;
+        try {
+            Listing dest = list(toId, true);
+            if (dest.byName.containsKey(name)) {
+                // el proveedor no mueve encima de otro: primero le cambiamos el nombre
+                java.util.Set<String> names = new java.util.HashSet<String>(dest.byName.keySet());
+                names.addAll(list(fromId, true).byName.keySet());
+                target = uniqueName(names, name);
+                Uri r = DocumentsContract.renameDocument(cr, doc, target);
+                if (r == null) throw new IOException("No se pudo mover " + name);
+                doc = r;
+            }
+            Uri moved = DocumentsContract.moveDocument(cr, doc, docUri(fromId), docUri(toId));
+            if (moved == null) throw new IOException("No se pudo mover " + name);
+            return target;
+        } catch (IOException x) {
+            throw x;
+        } catch (Exception x) {
+            throw new IOException("No se pudo mover " + name, x);
+        } finally {
+            cache.clear();
+        }
+    }
+
+    @Override
+    synchronized boolean rename(Object dir, String name, String newName) throws IOException {
+        Entry e = entry((String) dir, name);
+        if (list((String) dir, false).byName.containsKey(newName) && !name.equalsIgnoreCase(newName)) return false;
+        try {
+            if (DocumentsContract.renameDocument(cr, docUri(e.id), newName) == null) throw new IOException("No se pudo renombrar " + name);
+            return true;
+        } catch (IOException x) {
+            throw x;
+        } catch (Exception x) {
+            throw new IOException("No se pudo renombrar " + name, x);
+        } finally {
+            cache.clear();
+        }
+    }
+
     private void delete(Uri u) {
         try {
             DocumentsContract.deleteDocument(cr, u);

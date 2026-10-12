@@ -92,6 +92,18 @@
   #pwErr { color: var(--red); font-weight: 700; margin-top: 10px; min-height: 1.2em; }
   #prev { left: 14px; } #next { right: 18px; }
   @media (max-width: 600px) { h1 { font-size: 1.5rem; } .grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 12px; } #info { margin-left: 0; } }
+  .danger { background: var(--red) !important; color: #fff !important; }
+  .tile.folder.sel { background: var(--orange); box-shadow: 7px 7px 0 var(--purple); }
+  .tile.folder.sel .img { background: var(--orange); color: var(--black); }
+  #pick { display: none; position: fixed; inset: 0; z-index: 35; background: rgba(17,17,17,.6); align-items: center; justify-content: center; padding: 16px; }
+  #pick .box { background: var(--cream); border: var(--b); box-shadow: 10px 10px 0 var(--purple); width: min(520px, 100%); max-height: calc(100vh - 32px); display: flex; flex-direction: column; }
+  #pick h3 { font-family: "Archivo Black", sans-serif; text-transform: uppercase; margin: 0; padding: 14px 16px 6px; }
+  #pickPath { padding: 0 16px 10px; font-size: .8rem; }
+  #pickList { overflow: auto; border-top: var(--b); border-bottom: var(--b); background: var(--surface); flex: 1; min-height: 120px; }
+  #pickList div { padding: 11px 16px; border-bottom: 2px solid var(--ink); cursor: pointer; font-weight: 700; }
+  #pickList div:hover { background: var(--lilac); }
+  #pickList .up { background: var(--lilac); }
+  #pick .row { display: flex; gap: 10px; flex-wrap: wrap; padding: 14px 16px 16px; }
 </style>
 </head>
 <body>
@@ -113,6 +125,9 @@
       <button id="selAll">Seleccionar todo</button>
       <button id="dlSel" class="alt" disabled>⬇ Descargar</button>
       <button id="dlAll">⬇ Carpeta .zip</button>
+      <button id="ren" disabled>✎ Renombrar</button>
+      <button id="mv" disabled>↦ Mover</button>
+      <button id="del" class="danger" disabled>🗑 Borrar</button>
       <a class="btn alt" href="/mapa.html">◉ Mapa de fotos</a>
     </div>
   </div>
@@ -124,7 +139,7 @@
 <div id="drop">Suelta para subir ⬆</div>
 <div id="queue"><div class="t mono" id="qtitle"></div><div class="prog"><div id="qbar"></div></div><div id="qlog" class="mono"></div></div>
 <div id="viewer">
-  <div class="top"><span id="vname" class="mono"></span><button id="vdl" class="main">⬇ Descargar</button><button id="vclose">✕</button></div>
+  <div class="top"><span id="vname" class="mono"></span><button id="vdl" class="main">⬇ Descargar</button><button id="vmv">↦ Mover</button><button id="vdel" class="danger">🗑 Borrar</button><button id="vclose">✕</button></div>
   <button class="nav" id="prev">‹</button><div id="vbody"></div><button class="nav" id="next">›</button>
 </div>
 <div id="login">
@@ -144,12 +159,19 @@
     </form>
   </div>
 </div>
+<div id="pick"><div class="box">
+  <h3 id="pickTitle">Mover a…</h3>
+  <div id="pickPath" class="mono"></div>
+  <div id="pickList"></div>
+  <div class="row"><button id="pickOk" class="main">✓ Mover aquí</button><button id="pickMk">+ Carpeta</button><button id="pickNo">Cancelar</button></div>
+</div></div>
 <form id="zipForm" method="POST" action="/api/zip" style="display:none"></form>
 <script>
 try { localStorage.removeItem('subelo-pin'); } catch (e) {}
 let path = '';
 let files = [];
 const selected = new Set();
+const selDirs = new Set();
 const $ = id => document.getElementById(id);
 const enc = encodeURIComponent;
 const isImg = n => /\.(jpe?g|png|gif|webp|bmp|heic|heif)$/i.test(n);
@@ -223,7 +245,7 @@ function crumbs() {
   add('■ ' + (user || 'Disco'), '');
   parts.forEach((x, i) => { c.appendChild(document.createTextNode('›')); add(x, parts.slice(0, i + 1).join('/')); });
 }
-function go(p) { path = p; selected.clear(); load(); }
+function go(p) { path = p; selected.clear(); selDirs.clear(); load(); }
 async function load() {
   try {
     const info = await api('/api/info');
@@ -242,9 +264,11 @@ async function load() {
 function render(folders) {
   const g = $('grid'); g.innerHTML = '';
   folders.forEach(f => {
-    const t = document.createElement('div'); t.className = 'tile folder';
-    t.innerHTML = '<div class="img"></div><div class="name mono">▸ Carpeta</div>';
+    const t = document.createElement('div'); t.className = 'tile folder' + (selDirs.has(f) ? ' sel' : '');
+    t.innerHTML = '<input type="checkbox"><div class="img"></div><div class="name mono">▸ Carpeta</div>';
     t.querySelector('.img').textContent = f;
+    const cb = t.querySelector('input'); cb.checked = selDirs.has(f);
+    cb.onclick = ev => { ev.stopPropagation(); cb.checked ? selDirs.add(f) : selDirs.delete(f); t.classList.toggle('sel', cb.checked); updateSel(); };
     t.onclick = () => go(join(path, f));
     g.appendChild(t);
   });
@@ -272,13 +296,18 @@ function render(folders) {
 }
 function toggle(n, t, on) { on ? selected.add(n) : selected.delete(n); t.classList.toggle('sel', on); updateSel(); }
 function updateSel() {
+  const n = selected.size + selDirs.size;
+  $('del').disabled = $('mv').disabled = n === 0;
+  $('ren').disabled = n !== 1;
+  $('del').textContent = '🗑 Borrar' + (n ? ' (' + n + ')' : '');
   $('dlSel').disabled = selected.size === 0;
   $('dlSel').textContent = '⬇ Descargar' + (selected.size ? ' (' + selected.size + ')' : '');
 }
 $('selAll').onclick = () => {
   const all = selected.size < files.length;
-  selected.clear(); if (all) files.forEach(f => selected.add(f.name));
+  selected.clear(); selDirs.clear(); if (all) files.forEach(f => selected.add(f.name));
   document.querySelectorAll('.tile:not(.folder)').forEach((t, i) => { t.classList.toggle('sel', all); t.querySelector('input').checked = all; });
+  document.querySelectorAll('.tile.folder').forEach(t => { t.classList.remove('sel'); t.querySelector('input').checked = false; });
   updateSel();
 };
 function zip(names) {
@@ -299,6 +328,77 @@ $('mk').onclick = async () => {
   const np = join(path, n.replace(/\//g, '-'));
   try { await api('/api/mkdir?path=' + enc(np), {method: 'POST'}); go(np); } catch (e) { alert(e.message); }
 };
+
+// ---------- borrar, mover, renombrar ----------
+async function post(url, fields) {
+  const body = new URLSearchParams();
+  for (const [k, v] of fields) body.append(k, v);
+  return api(url, {method: 'POST', body});
+}
+function describe(nFiles, nDirs) {
+  const a = [];
+  if (nFiles) a.push(nFiles + (nFiles === 1 ? ' archivo' : ' archivos'));
+  if (nDirs) a.push(nDirs + (nDirs === 1 ? ' carpeta con todo lo que tiene' : ' carpetas con todo lo que tienen'));
+  return a.join(' y ');
+}
+async function removeItems(names, nDirs) {
+  if (!confirm('¿Borrar ' + describe(names.length - nDirs, nDirs) + ' del disco?\n\nNo se puede deshacer.')) return false;
+  try { await post('/api/delete', [['path', path], ...names.map(n => ['name', n])]); }
+  catch (e) { alert(e.message); }
+  return true;
+}
+$('del').onclick = async () => {
+  if (await removeItems([...selected, ...selDirs], selDirs.size)) { selected.clear(); selDirs.clear(); load(); }
+};
+$('ren').onclick = async () => {
+  const old = [...selected, ...selDirs][0];
+  const n = prompt('Nombre nuevo:', old);
+  if (!n || n === old) return;
+  try { await post('/api/rename', [['path', path], ['name', old], ['new', n]]); selected.clear(); selDirs.clear(); load(); }
+  catch (e) { alert(e.message); }
+};
+let pickPath = '', pickNames = [], pickDone = null;
+async function pickLoad() {
+  $('pickPath').textContent = 'DISCO:/' + (user || '') + '/' + pickPath;
+  const l = $('pickList'); l.innerHTML = '';
+  if (pickPath) {
+    const up = document.createElement('div'); up.className = 'up mono'; up.textContent = '↑ Subir un nivel';
+    up.onclick = () => { pickPath = pickPath.includes('/') ? pickPath.slice(0, pickPath.lastIndexOf('/')) : ''; pickLoad(); };
+    l.appendChild(up);
+  }
+  try {
+    const j = await api('/api/folders?path=' + enc(pickPath));
+    j.folders.forEach(f => {
+      const full = join(pickPath, f);
+      if (pickNames.some(n => join(path, n) === full)) return; // no dentro de sí misma
+      const d = document.createElement('div'); d.textContent = '▸ ' + f;
+      d.onclick = () => { pickPath = full; pickLoad(); };
+      l.appendChild(d);
+    });
+  } catch (e) { l.textContent = e.message; }
+  $('pickOk').disabled = pickPath === path;
+}
+function movePick(names, done) {
+  pickNames = names; pickDone = done; pickPath = '';
+  $('pickTitle').textContent = 'Mover ' + names.length + (names.length === 1 ? ' elemento' : ' elementos') + ' a…';
+  $('pick').style.display = 'flex';
+  pickLoad();
+}
+$('pickNo').onclick = () => { $('pick').style.display = 'none'; };
+$('pickMk').onclick = async () => {
+  const n = prompt('Nombre de la nueva carpeta:');
+  if (!n) return;
+  const np = join(pickPath, n.replace(/\//g, '-'));
+  try { await api('/api/mkdir?path=' + enc(np), {method: 'POST'}); pickPath = np; pickLoad(); } catch (e) { alert(e.message); }
+};
+$('pickOk').onclick = async () => {
+  try {
+    await post('/api/move', [['path', path], ['to', pickPath], ...pickNames.map(n => ['name', n])]);
+    $('pick').style.display = 'none';
+    if (pickDone) pickDone();
+  } catch (e) { alert(e.message); }
+};
+$('mv').onclick = () => movePick([...selected, ...selDirs], () => { selected.clear(); selDirs.clear(); load(); });
 
 // ---------- visor ----------
 let vi = -1;
@@ -321,6 +421,10 @@ function step(d) {
 }
 $('vclose').onclick = closeViewer;
 $('vdl').onclick = () => { location.href = fileUrl(files[vi].name, true); };
+$('vdel').onclick = async () => {
+  if (await removeItems([files[vi].name], 0)) { closeViewer(); load(); }
+};
+$('vmv').onclick = () => { const n = files[vi].name; movePick([n], () => { closeViewer(); load(); }); };
 $('prev').onclick = () => step(-1);
 $('next').onclick = () => step(1);
 document.addEventListener('keydown', e => {

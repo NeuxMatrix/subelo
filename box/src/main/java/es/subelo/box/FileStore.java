@@ -151,6 +151,47 @@ final class FileStore extends Store {
     }
 
     @Override
+    synchronized void delete(Object dir, String name) throws IOException {
+        File f = new File((File) dir, name);
+        if (!f.exists()) throw new IOException("No existe " + name);
+        deleteTree(f);
+        if (f.exists()) throw new IOException("No se pudo borrar " + name);
+    }
+
+    private static void deleteTree(File f) {
+        if (f.isDirectory()) {
+            File[] kids = f.listFiles();
+            if (kids != null) for (File k : kids) deleteTree(k);
+        }
+        f.delete();
+    }
+
+    @Override
+    synchronized String move(Object from, String name, Object to) throws IOException {
+        File src = new File((File) from, name);
+        if (!src.exists()) throw new IOException("No existe " + name);
+        File d = (File) to;
+        String target = name;
+        if (new File(d, target).exists()) {
+            Set<String> names = new HashSet<String>();
+            String[] list = d.list();
+            if (list != null) Collections.addAll(names, list);
+            target = uniqueName(names, name);
+        }
+        if (!src.renameTo(new File(d, target))) throw new IOException("No se pudo mover " + name);
+        return target;
+    }
+
+    @Override
+    synchronized boolean rename(Object dir, String name, String newName) throws IOException {
+        File src = new File((File) dir, name), dst = new File((File) dir, newName);
+        if (!src.exists()) throw new IOException("No existe " + name);
+        if (dst.exists() && !name.equalsIgnoreCase(newName)) return false;
+        if (!src.renameTo(dst)) throw new IOException("No se pudo renombrar " + name);
+        return true;
+    }
+
+    @Override
     long free() {
         return root.getUsableSpace();
     }

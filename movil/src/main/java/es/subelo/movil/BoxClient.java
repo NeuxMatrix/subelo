@@ -289,6 +289,56 @@ final class BoxClient {
         return out;
     }
 
+    /** Borra ficheros o carpetas (con todo su contenido) de una carpeta. */
+    void delete(String path, List<String> names) throws IOException {
+        List<String[]> f = new ArrayList<String[]>();
+        f.add(new String[]{"path", path});
+        for (String n : names) f.add(new String[]{"name", n});
+        form("/api/delete", f);
+    }
+
+    /** Mueve ficheros o carpetas de «path» a «to». */
+    void move(String path, List<String> names, String to) throws IOException {
+        List<String[]> f = new ArrayList<String[]>();
+        f.add(new String[]{"path", path});
+        f.add(new String[]{"to", to});
+        for (String n : names) f.add(new String[]{"name", n});
+        form("/api/move", f);
+    }
+
+    void rename(String path, String name, String newName) throws IOException {
+        List<String[]> f = new ArrayList<String[]>();
+        f.add(new String[]{"path", path});
+        f.add(new String[]{"name", name});
+        f.add(new String[]{"new", newName});
+        form("/api/rename", f);
+    }
+
+    private JSONObject form(String path, List<String[]> fields) throws IOException {
+        StringBuilder sb = new StringBuilder();
+        for (String[] kv : fields) {
+            if (sb.length() > 0) sb.append('&');
+            sb.append(enc(kv[0])).append('=').append(enc(kv[1]));
+        }
+        byte[] body = sb.toString().getBytes("UTF-8");
+        HttpURLConnection c = open("POST", path, 120000);
+        try {
+            c.setDoOutput(true);
+            c.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
+            c.setFixedLengthStreamingMode(body.length);
+            OutputStream os = c.getOutputStream();
+            os.write(body);
+            os.close();
+            return readJson(c);
+        } catch (BoxException e) {
+            throw e;
+        } catch (IOException e) {
+            throw translate(e);
+        } finally {
+            c.disconnect();
+        }
+    }
+
     /** JSON con las fotos que tienen ubicación (para el mapa). */
     String places() throws IOException {
         return call("GET", "/api/places", 60000).toString();

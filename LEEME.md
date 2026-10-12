@@ -16,6 +16,7 @@ No hace falta root ni Internet: todo va por tu red local.
 
 - **Subir álbumes enteros** (móvil, «▤ Subir álbumes enteros»): eliges uno o varios álbumes de la galería (Cámara, WhatsApp, Descargas…) y cada uno va a su propia carpeta del disco, dentro de la carpeta de destino. Lo que ya estaba subido se salta, así que repetirlo solo sube lo nuevo. En Android 14, si al dar permiso elegiste «Seleccionar fotos», solo se ven esas: cámbialo a «Permitir todo».
 - **Mis fotos por carpetas** (móvil): cada carpeta muestra una foto de portada y cuántas fotos tiene.
+- **Borrar, mover y renombrar** fotos, vídeos y carpetas: en el móvil, mantén pulsado para elegir (luego toca para añadir más) y usa «🗑 Borrar», «↦ Mover» o «✎»; en el visor también hay 🗑 y ↦. En la web, marca las casillas (también en las carpetas). Siempre pide confirmación; borrar no se puede deshacer.
 - **Mapa de mis fotos** (móvil y web, botón «◉ Mapa de fotos»): cada foto aparece donde se hizo, agrupadas por zonas, con filtro por año. La ubicación sale del GPS que guarda la cámara; las fotos hechas con la ubicación de la cámara apagada no salen. La primera vez el box tarda un poco en leer todas las fotos; después solo mira las nuevas. El fondo del mapa (OpenStreetMap/CARTO) necesita internet.
 
 ## Actualizaciones automáticas (GitHub)

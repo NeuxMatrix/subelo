@@ -50,6 +50,7 @@ import java.util.concurrent.Executors;
 public class ExploreActivity extends Activity {
     private static final int REQ_PICK = 1;
     private static final int REQ_WRITE = 2;
+    private static final int REQ_MOVE = 3;
 
     private static LruCache<String, Bitmap> thumbCache;
 
@@ -63,7 +64,7 @@ public class ExploreActivity extends Activity {
     private String path = "";
     private BoxClient bc;
     private TextView pathText;
-    private Button downloadButton;
+    private Button downloadButton, uploadButton, folderButton, moveButton, deleteButton, renameButton;
     private Adapter adapter;
     private List<BoxClient.RemoteFile> pendingDownload;
 
@@ -109,10 +110,8 @@ public class ExploreActivity extends Activity {
         grid.setOnItemLongClickListener(new AdapterView.OnItemLongClickListener() {
             @Override
             public boolean onItemLongClick(AdapterView<?> parent, View view, int pos, long id) {
-                Object e = entries.get(pos);
-                if (!(e instanceof BoxClient.RemoteFile)) return false;
                 selecting = true;
-                toggle(((BoxClient.RemoteFile) e).name);
+                toggle(key(entries.get(pos)));
                 return true;
             }
         });
@@ -121,12 +120,13 @@ public class ExploreActivity extends Activity {
         LinearLayout bar = new LinearLayout(this);
         bar.setBackgroundColor(Brutal.BLACK);
         bar.setPadding(dp(10), dp(6), dp(4), dp(6));
-        bar.addView(Brutal.button(this, "⬆ Subir", Brutal.ORANGE, Brutal.BLACK, new View.OnClickListener() {
+        uploadButton = Brutal.button(this, "⬆ Subir", Brutal.ORANGE, Brutal.BLACK, new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 pickToUpload();
             }
-        }), Brutal.half(this));
+        });
+        bar.addView(uploadButton, Brutal.half(this));
         downloadButton = Brutal.button(this, "⬇ Todo", Brutal.PURPLE, Brutal.SNOW, new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -134,14 +134,38 @@ public class ExploreActivity extends Activity {
             }
         });
         bar.addView(downloadButton, Brutal.half(this));
-        bar.addView(Brutal.button(this, "+ Carpeta", Brutal.PAPER, Brutal.BLACK, new View.OnClickListener() {
+        folderButton = Brutal.button(this, "+ Carpeta", Brutal.PAPER, Brutal.BLACK, new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 newFolder();
             }
-        }), Brutal.half(this));
+        });
+        bar.addView(folderButton, Brutal.half(this));
+        moveButton = Brutal.button(this, "↦ Mover", Brutal.PAPER, Brutal.BLACK, new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                startActivityForResult(new Intent(ExploreActivity.this, FolderActivity.class)
+                        .putExtra(FolderActivity.EXTRA_PICK, path), REQ_MOVE);
+            }
+        });
+        bar.addView(moveButton, Brutal.half(this));
+        renameButton = Brutal.button(this, "✎", Brutal.PAPER, Brutal.BLACK, new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                renameSelected();
+            }
+        });
+        bar.addView(renameButton, Brutal.spaced(this, dp(56), LinearLayout.LayoutParams.WRAP_CONTENT, 0));
+        deleteButton = Brutal.button(this, "🗑 Borrar", 0xFFE5322D, Brutal.SNOW, new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                confirmDelete();
+            }
+        });
+        bar.addView(deleteButton, Brutal.half(this));
         col.addView(bar);
         setContentView(col);
+        refreshSelection();
     }
 
     @Override
@@ -250,12 +274,20 @@ public class ExploreActivity extends Activity {
     private void refreshSelection() {
         String where = "DISCO:/" + Prefs.user(this) + "/" + path;
         if (selecting) {
-            pathText.setText(where + "\n■ " + selected.size() + " SELECCIONADAS · ATRÁS PARA SALIR");
-            downloadButton.setText("⬇ (" + selected.size() + ")");
+            pathText.setText(where + "\n■ " + selected.size() + " ELEGIDOS · TOCA PARA AÑADIR · ATRÁS PARA SALIR");
+            int nFiles = selectedFiles().size();
+            downloadButton.setText("⬇ " + nFiles);
+            downloadButton.setVisibility(nFiles > 0 ? View.VISIBLE : View.GONE);
         } else {
-            pathText.setText(where + "\n" + files.size() + " ARCHIVOS · MANTÉN PULSADO PARA ELEGIR");
+            pathText.setText(where + "\n" + files.size() + " ARCHIVOS · MANTÉN PULSADO PARA BORRAR O MOVER");
             downloadButton.setText("⬇ TODO");
+            downloadButton.setVisibility(View.VISIBLE);
         }
+        uploadButton.setVisibility(selecting ? View.GONE : View.VISIBLE);
+        folderButton.setVisibility(selecting ? View.GONE : View.VISIBLE);
+        moveButton.setVisibility(selecting ? View.VISIBLE : View.GONE);
+        deleteButton.setVisibility(selecting ? View.VISIBLE : View.GONE);
+        renameButton.setVisibility(selecting && selected.size() == 1 ? View.VISIBLE : View.GONE);
         adapter.notifyDataSetChanged();
     }
 
@@ -265,10 +297,16 @@ public class ExploreActivity extends Activity {
         refreshSelection();
     }
 
+    /** Clave de selección: el nombre del fichero, o «nombre/» si es carpeta. */
+    private static String key(Object e) {
+        return e instanceof String ? e + "/" : ((BoxClient.RemoteFile) e).name;
+    }
+
     private void onTap(int pos) {
         Object e = entries.get(pos);
         if (e instanceof String) {
-            if (!selecting) go(path.isEmpty() ? (String) e : path + "/" + e);
+            if (selecting) toggle(key(e));
+            else go(path.isEmpty() ? (String) e : path + "/" + e);
             return;
         }
         BoxClient.RemoteFile f = (BoxClient.RemoteFile) e;
@@ -297,6 +335,10 @@ public class ExploreActivity extends Activity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQ_MOVE && resultCode == RESULT_OK && data != null) {
+            moveSelected(data.getStringExtra("path"));
+            return;
+        }
         if (requestCode != REQ_PICK || resultCode != RESULT_OK || data == null) return;
         ArrayList<Uri> uris = new ArrayList<Uri>();
         ClipData cd = data.getClipData();
@@ -315,6 +357,10 @@ public class ExploreActivity extends Activity {
     private void downloadClicked() {
         final List<BoxClient.RemoteFile> list = new ArrayList<BoxClient.RemoteFile>();
         for (BoxClient.RemoteFile f : files) if (!selecting || selected.contains(f.name)) list.add(f);
+        if (selecting && list.isEmpty()) {
+            Toast.makeText(this, "Para descargar, elige fotos (no carpetas)", Toast.LENGTH_SHORT).show();
+            return;
+        }
         if (list.isEmpty()) {
             Toast.makeText(this, "No hay archivos en esta carpeta", Toast.LENGTH_SHORT).show();
             return;
@@ -357,6 +403,139 @@ public class ExploreActivity extends Activity {
             if (results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) startDownload(l);
             else Toast.makeText(this, "Sin permiso no puedo guardar en el móvil", Toast.LENGTH_LONG).show();
         }
+    }
+
+    // ---------- borrar, mover, renombrar ----------
+
+    private List<BoxClient.RemoteFile> selectedFiles() {
+        List<BoxClient.RemoteFile> l = new ArrayList<BoxClient.RemoteFile>();
+        for (BoxClient.RemoteFile f : files) if (selected.contains(f.name)) l.add(f);
+        return l;
+    }
+
+    /** Nombres reales de lo elegido (sin la «/» de las carpetas). */
+    private List<String> selectedNames() {
+        List<String> l = new ArrayList<String>();
+        for (Object e : entries) if (selected.contains(key(e))) l.add(e instanceof String ? (String) e : ((BoxClient.RemoteFile) e).name);
+        return l;
+    }
+
+    static String describe(int nFiles, int nDirs) {
+        StringBuilder sb = new StringBuilder();
+        if (nFiles > 0) sb.append(nFiles).append(nFiles == 1 ? " archivo" : " archivos");
+        if (nDirs > 0) {
+            if (sb.length() > 0) sb.append(" y ");
+            sb.append(nDirs).append(nDirs == 1 ? " carpeta con todo lo que tiene" : " carpetas con todo lo que tienen");
+        }
+        return sb.toString();
+    }
+
+    private void confirmDelete() {
+        final List<String> names = selectedNames();
+        if (names.isEmpty()) return;
+        int nFiles = selectedFiles().size();
+        new AlertDialog.Builder(this)
+                .setTitle("¿Borrar del disco?")
+                .setMessage("Vas a borrar " + describe(nFiles, names.size() - nFiles) + ".\n\nNo se puede deshacer.")
+                .setPositiveButton("Borrar", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface d, int w) {
+                        run("Borrado", new Op() {
+                            @Override
+                            public void go(BoxClient c) throws IOException {
+                                c.delete(path, names);
+                            }
+                        });
+                    }
+                })
+                .setNegativeButton("Cancelar", null)
+                .show();
+    }
+
+    private void moveSelected(final String to) {
+        final List<String> names = selectedNames();
+        if (names.isEmpty() || to == null) return;
+        if (to.equals(path)) {
+            Toast.makeText(this, "Ya está en esa carpeta", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        int nFiles = selectedFiles().size();
+        new AlertDialog.Builder(this)
+                .setTitle("¿Mover?")
+                .setMessage("Vas a mover " + describe(nFiles, names.size() - nFiles) + " a DISCO:/"
+                        + Prefs.user(this) + "/" + to)
+                .setPositiveButton("Mover", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface d, int w) {
+                        run("Movido", new Op() {
+                            @Override
+                            public void go(BoxClient c) throws IOException {
+                                c.move(path, names, to);
+                            }
+                        });
+                    }
+                })
+                .setNegativeButton("Cancelar", null)
+                .show();
+    }
+
+    private void renameSelected() {
+        List<String> names = selectedNames();
+        if (names.size() != 1) return;
+        final String old = names.get(0);
+        final EditText et = new EditText(this);
+        et.setText(old);
+        int dot = old.lastIndexOf('.');
+        et.setSelection(0, dot > 0 && selectedFiles().size() == 1 ? dot : old.length());
+        new AlertDialog.Builder(this)
+                .setTitle("Cambiar nombre")
+                .setView(et)
+                .setPositiveButton("Guardar", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface d, int w) {
+                        final String nn = et.getText().toString().trim();
+                        if (nn.isEmpty() || nn.equals(old)) return;
+                        run("Nombre cambiado", new Op() {
+                            @Override
+                            public void go(BoxClient c) throws IOException {
+                                c.rename(path, old, nn);
+                            }
+                        });
+                    }
+                })
+                .setNegativeButton("Cancelar", null)
+                .show();
+    }
+
+    interface Op {
+        void go(BoxClient c) throws IOException;
+    }
+
+    /** Hace la operación en segundo plano, sale del modo selección y recarga. */
+    private void run(final String done, final Op op) {
+        pathText.setText("DISCO:/" + Prefs.user(this) + "/" + path + "\nUN MOMENTO…");
+        bg.execute(new Runnable() {
+            @Override
+            public void run() {
+                String err = null;
+                try {
+                    if (bc == null) bc = BoxClient.connect(ExploreActivity.this);
+                    op.go(bc);
+                } catch (IOException e) {
+                    err = e.getMessage();
+                }
+                final String msg = err == null ? done : err;
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        Toast.makeText(ExploreActivity.this, msg, Toast.LENGTH_LONG).show();
+                        selecting = false;
+                        selected.clear();
+                        load();
+                    }
+                });
+            }
+        });
     }
 
     // ---------- nueva carpeta ----------
@@ -479,6 +658,8 @@ public class ExploreActivity extends Activity {
                 label.setSingleLine(false);
                 label.setMaxLines(2);
                 label.setEllipsize(TextUtils.TruncateAt.END);
+                boolean fsel = selected.contains(name + "/");
+                cell.setBackground(cellBg(fsel ? Brutal.ORANGE : Brutal.PURPLE));
                 if (al != null && al.cover != null) {
                     icon.setText("");
                     label.setText("▸ " + name.toUpperCase(java.util.Locale.getDefault()) + "\n" + count(al));
@@ -487,9 +668,9 @@ public class ExploreActivity extends Activity {
                     icon.setText(name.toUpperCase(java.util.Locale.getDefault()));
                     label.setText(al == null ? "▸ CARPETA" : "▸ " + count(al));
                 }
-                check.setText("");
-                check.setBackground(null);
-                cell.setAlpha(1f);
+                check.setText(selecting ? (fsel ? "✓" : "") : "");
+                check.setBackground(selecting ? cellBg(fsel ? Brutal.ORANGE : Brutal.WHITE) : null);
+                cell.setAlpha(selecting && !fsel ? 0.55f : 1f);
                 return cell;
             }
             BoxClient.RemoteFile f = (BoxClient.RemoteFile) e;
