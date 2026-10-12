@@ -1,0 +1,12 @@
+build/
+.gradle/
+local.properties
+.idea/
+*.iml
+# la firma nunca va al repositorio: está en los secretos de GitHub
+firma/
+*.jks
+*.keystore
+# los APK se publican en Releases
+apk/
+javac.*.args

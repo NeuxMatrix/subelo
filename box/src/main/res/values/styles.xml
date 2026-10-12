@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Subelo" parent="@android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:colorPrimary">#7B2FF7</item>
+        <item name="android:colorPrimaryDark">#111111</item>
+        <item name="android:colorAccent">#FF6B1A</item>
+        <item name="android:colorControlActivated">#7B2FF7</item>
+        <item name="android:windowBackground">@color/crema</item>
+        <item name="android:statusBarColor">#111111</item>
+        <item name="android:navigationBarColor">#111111</item>
+        <item name="android:textColorPrimary">#111111</item>
+        <item name="android:alertDialogTheme">@style/SubeloDialog</item>
+    </style>
+    <style name="SubeloDialog" parent="@android:style/Theme.Material.Light.Dialog.Alert">
+        <item name="android:colorAccent">#7B2FF7</item>
+        <item name="android:textColorPrimary">#111111</item>
+    </style>
+    <style name="SubeloOscuro" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:colorPrimary">#7B2FF7</item>
+        <item name="android:colorPrimaryDark">#111111</item>
+        <item name="android:colorAccent">#FF6B1A</item>
+        <item name="android:colorControlActivated">#7B2FF7</item>
+        <item name="android:windowBackground">@color/noche</item>
+        <item name="android:statusBarColor">#111111</item>
+        <item name="android:navigationBarColor">#111111</item>
+        <item name="android:textColorPrimary">#F3EADF</item>
+        <item name="android:alertDialogTheme">@style/SubeloOscuroDialog</item>
+    </style>
+    <style name="SubeloOscuroDialog" parent="@android:style/Theme.Material.Dialog.Alert">
+        <item name="android:colorAccent">#FF6B1A</item>
+        <item name="android:textColorPrimary">#F3EADF</item>
+    </style>
+    <color name="noche">#16121C</color>
+    <color name="crema">#FFF4E6</color>
+</resources>

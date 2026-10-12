@@ -1,0 +1,44 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'es.subelo.box'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'es.subelo.box'
+        minSdk 21
+        targetSdk 30
+        versionCode 5
+        versionName '1.4'
+    }
+
+    // Misma firma que los APK ya compilados: así puedes actualizar sin desinstalar.
+    signingConfigs {
+        subelo {
+            storeFile rootProject.file(System.getenv('KEYSTORE') ?: 'firma/subelo.jks')
+            storePassword System.getenv('KEYSTORE_PASS')
+            keyAlias 'subelo'
+            keyPassword System.getenv('KEYSTORE_PASS')
+        }
+    }
+
+    buildTypes {
+        debug { signingConfig signingConfigs.subelo }
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.subelo
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    lint {
+        abortOnError false
+        checkReleaseBuilds false
+    }
+}

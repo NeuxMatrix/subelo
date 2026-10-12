@@ -1,0 +1,435 @@
+package es.subelo.movil;
+
+import android.content.Context;
+
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.security.MessageDigest;
+import java.security.cert.CertificateException;
+import java.security.cert.X509Certificate;
+import java.net.URL;
+import java.net.URLEncoder;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+import javax.net.ssl.HostnameVerifier;
+import javax.net.ssl.HttpsURLConnection;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLSession;
+import javax.net.ssl.SSLSocketFactory;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.X509TrustManager;
+
+/**
+ * Cliente del servidor Súbelo que corre en el box. Todo va por HTTPS.
+ * El box usa un certificado propio: al emparejar se memoriza su huella (SHA-256) y a partir de ahí
+ * solo se habla con un servidor que tenga exactamente ese certificado.
+ */
+final class BoxClient {
+
+    /** Error devuelto por el box (sesión caducada, disco no disponible...). */
+    static final class BoxException extends IOException {
+        final int code;
+
+        BoxException(int code, String msg) {
+            super(msg);
+            this.code = code;
+        }
+    }
+
+    static final class RemoteFile {
+        final String dir;
+        final String name;
+        final long size;
+        final long mtime;
+
+        RemoteFile(String dir, String name, long size, long mtime) {
+            this.dir = dir;
+            this.name = name;
+            this.size = size;
+            this.mtime = mtime;
+        }
+    }
+
+    static final class Listing {
+        final List<String> folders = new ArrayList<String>();
+        final List<RemoteFile> files = new ArrayList<RemoteFile>();
+    }
+
+    interface Progress {
+        void onProgress(long sent, long total);
+    }
+
+    /** El certificado del box no es el que se memorizó al emparejar. */
+    static final class WrongBoxException extends IOException {
+        WrongBoxException() {
+            super("Este box no es el que emparejaste (su código ha cambiado). Si lo has reinstalado o "
+                    + "es otro box, pulsa «Buscar el box» y vuelve a emparejar.");
+        }
+    }
+
+    final String host;
+    final int port;
+    private final String base;
+    private final String token;
+    private final String expectedFp;
+    private volatile String seenFp;
+    private final SSLSocketFactory ssl;
+
+    /** expectedFp == null: primera conexión (emparejamiento), se acepta y se anota la huella. */
+    BoxClient(String host, int port, String token, String expectedFp) {
+        this.host = host;
+        this.port = port;
+        this.base = "https://" + (host.indexOf(':') >= 0 ? "[" + host + "]" : host) + ":" + port;
+        this.token = token == null ? "" : token;
+        this.expectedFp = expectedFp;
+        this.ssl = pinnedFactory();
+    }
+
+    static BoxClient fromPrefs(Context c) {
+        String h = Prefs.host(c);
+        return h == null ? null : new BoxClient(h, Prefs.port(c), Prefs.token(c), Prefs.certFp(c));
+    }
+
+    /** Huella del certificado que presentó el box en la última conexión. */
+    String fingerprint() {
+        return seenFp;
+    }
+
+    static String shortCode(String fp) {
+        if (fp == null || fp.length() < 8) return "????-????";
+        String s = fp.toUpperCase(Locale.US);
+        return s.substring(0, 4) + "-" + s.substring(4, 8);
+    }
+
+    private SSLSocketFactory pinnedFactory() {
+        TrustManager tm = new X509TrustManager() {
+            @Override
+            public void checkClientTrusted(X509Certificate[] chain, String authType) throws CertificateException {
+                throw new CertificateException("no se usa");
+            }
+
+            @Override
+            public void checkServerTrusted(X509Certificate[] chain, String authType) throws CertificateException {
+                if (chain == null || chain.length == 0) throw new CertificateException("Sin certificado");
+                String fp;
+                try {
+                    byte[] d = MessageDigest.getInstance("SHA-256").digest(chain[0].getEncoded());
+                    StringBuilder sb = new StringBuilder();
+                    for (byte x : d) sb.append(String.format(Locale.US, "%02x", x));
+                    fp = sb.toString();
+                } catch (Exception e) {
+                    throw new CertificateException(e);
+                }
+                seenFp = fp;
+                if (expectedFp != null && !expectedFp.equalsIgnoreCase(fp)) {
+                    throw new CertificateException("WRONG_BOX");
+                }
+            }
+
+            @Override
+            public X509Certificate[] getAcceptedIssuers() {
+                return new X509Certificate[0];
+            }
+        };
+        try {
+            SSLContext ctx = SSLContext.getInstance("TLS");
+            ctx.init(null, new TrustManager[]{tm}, null);
+            return ctx.getSocketFactory();
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    private static final HostnameVerifier ANY_HOST = new HostnameVerifier() {
+        @Override
+        public boolean verify(String hostname, SSLSession session) {
+            return true; // la identidad la garantiza la huella del certificado, no el nombre
+        }
+    };
+
+    private static IOException translate(IOException e) {
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            if (t.getMessage() != null && t.getMessage().contains("WRONG_BOX")) return new WrongBoxException();
+        }
+        return e;
+    }
+
+    /**
+     * Devuelve un cliente que responde y con una sesión válida. Si la IP guardada ya no vale
+     * (el router le dio otra al box), lo vuelve a buscar en la red.
+     */
+    static BoxClient connect(Context c) throws IOException {
+        BoxClient bc = fromPrefs(c);
+        if (bc != null) {
+            try {
+                bc.checkAuth(bc.info());
+                if (Prefs.certFp(c) == null && bc.fingerprint() != null) Prefs.setCertFp(c, bc.fingerprint());
+                return bc;
+            } catch (BoxException e) {
+                throw e;
+            } catch (WrongBoxException e) {
+                // otra máquina en esa IP: buscamos el nuestro por la red
+            } catch (IOException ignored) {
+                // IP antigua o box apagado: probamos a buscarlo
+            }
+        }
+        List<Discovery.Found> found = Discovery.discover(c, 3000);
+        Discovery.Found pick = null;
+        String name = Prefs.boxName(c);
+        for (Discovery.Found f : found) {
+            if (f.name.equals(name)) pick = f;
+        }
+        if (pick == null && found.size() == 1) pick = found.get(0);
+        if (pick == null) {
+            throw new IOException(bc == null
+                    ? "Todavía no has elegido el box. Pulsa «Buscar el box»."
+                    : "No encuentro el box en la red. ¿Estás en el Wi-Fi de casa y el box está encendido?");
+        }
+        bc = new BoxClient(pick.host, pick.port, Prefs.token(c), Prefs.certFp(c));
+        bc.checkAuth(bc.info()); // si no es nuestro box, falla aquí por la huella
+        Prefs.setBox(c, pick.name, pick.host, pick.port);
+        if (Prefs.certFp(c) == null && bc.fingerprint() != null) Prefs.setCertFp(c, bc.fingerprint());
+        return bc;
+    }
+
+    void checkAuth(JSONObject info) throws BoxException {
+        if (info.isNull("user")) throw new BoxException(401, "Tienes que entrar con tu usuario");
+    }
+
+    /** Los dos usuarios del box y si ya tienen contraseña. */
+    JSONObject users() throws IOException {
+        return call("GET", "/api/users", 4000);
+    }
+
+    /** Entra (o, la primera vez, fija la contraseña). Devuelve {user, token, created}. */
+    JSONObject login(String user, String password) throws IOException {
+        HttpURLConnection c = open("POST", "/api/login", 20000);
+        try {
+            byte[] body = ("user=" + enc(user) + "&password=" + enc(password) + "&client=app").getBytes("UTF-8");
+            c.setDoOutput(true);
+            c.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
+            c.setFixedLengthStreamingMode(body.length);
+            OutputStream os = c.getOutputStream();
+            os.write(body);
+            os.close();
+            return readJson(c);
+        } catch (BoxException e) {
+            throw e;
+        } catch (IOException e) {
+            throw translate(e);
+        } finally {
+            c.disconnect();
+        }
+    }
+
+    void logout() throws IOException {
+        call("POST", "/api/logout", 4000);
+    }
+
+    JSONObject info() throws IOException {
+        return call("GET", "/api/info", 4000);
+    }
+
+    List<String> folders(String path) throws IOException {
+        JSONObject o = call("GET", "/api/folders?path=" + enc(path), 15000);
+        List<String> out = new ArrayList<String>();
+        JSONArray a = o.optJSONArray("folders");
+        if (a != null) for (int i = 0; i < a.length(); i++) out.add(a.optString(i));
+        return out;
+    }
+
+    Listing list(String path) throws IOException {
+        JSONObject o = call("GET", "/api/list?path=" + enc(path), 30000);
+        Listing l = new Listing();
+        JSONArray a = o.optJSONArray("folders");
+        if (a != null) for (int i = 0; i < a.length(); i++) l.folders.add(a.optString(i));
+        JSONArray f = o.optJSONArray("files");
+        if (f != null) {
+            for (int i = 0; i < f.length(); i++) {
+                JSONObject x = f.optJSONObject(i);
+                l.files.add(new RemoteFile(path, x.optString("name"), x.optLong("size", -1), x.optLong("mtime", 0)));
+            }
+        }
+        return l;
+    }
+
+    /** Miniatura JPEG o null si el box no puede generarla. */
+    byte[] thumb(String dir, String name) throws IOException {
+        HttpURLConnection c = open("GET", "/api/thumb?path=" + enc(dir) + "&name=" + enc(name), 30000);
+        try {
+            if (c.getResponseCode() != 200) return null;
+            return readBytes(c.getInputStream());
+        } finally {
+            c.disconnect();
+        }
+    }
+
+    /** Abre la descarga de un fichero (con Range opcional) para el reproductor de vídeo. */
+    HttpURLConnection openFile(String dir, String name, String range) throws IOException {
+        HttpURLConnection c = open("GET", "/api/file?path=" + enc(dir) + "&name=" + enc(name), 60000);
+        if (range != null) c.setRequestProperty("Range", range);
+        try {
+            c.getResponseCode();
+        } catch (IOException e) {
+            c.disconnect();
+            throw translate(e);
+        }
+        return c;
+    }
+
+    /** Descarga un fichero del box y lo escribe en out. */
+    void download(String dir, String name, OutputStream out, Progress progress, AtomicBoolean cancel) throws IOException {
+        HttpURLConnection c = open("GET", "/api/file?path=" + enc(dir) + "&name=" + enc(name), 60000);
+        try {
+            int code = c.getResponseCode();
+            if (code != 200) readJson(c);
+            long total = -1;
+            try {
+                total = Long.parseLong(c.getHeaderField("Content-Length"));
+            } catch (Exception ignored) {
+            }
+            InputStream in = c.getInputStream();
+            byte[] buf = new byte[128 * 1024];
+            long got = 0, last = 0;
+            int r;
+            while ((r = in.read(buf)) != -1) {
+                if (cancel != null && cancel.get()) throw new IOException("Cancelado");
+                out.write(buf, 0, r);
+                got += r;
+                if (progress != null && got - last > 256 * 1024) {
+                    progress.onProgress(got, total);
+                    last = got;
+                }
+            }
+            in.close();
+            if (total >= 0 && got != total) throw new IOException("Descarga incompleta");
+        } finally {
+            c.disconnect();
+        }
+    }
+
+    private static byte[] readBytes(InputStream in) throws IOException {
+        ByteArrayOutputStream b = new ByteArrayOutputStream();
+        byte[] buf = new byte[16384];
+        int r;
+        while ((r = in.read(buf)) != -1) b.write(buf, 0, r);
+        in.close();
+        return b.toByteArray();
+    }
+
+    void mkdir(String path) throws IOException {
+        call("POST", "/api/mkdir?path=" + enc(path), 15000);
+    }
+
+    /** Tamaño del fichero en el box o -1 si no está. */
+    long exists(String dir, String name) throws IOException {
+        JSONObject o = call("GET", "/api/exists?path=" + enc(dir) + "&name=" + enc(name), 15000);
+        return o.optBoolean("exists") ? o.optLong("size", -1) : -1;
+    }
+
+    JSONObject upload(String dir, String name, long size, long mtime, InputStream in,
+                      Progress progress, AtomicBoolean cancel) throws IOException {
+        String q = "/api/upload?path=" + enc(dir) + "&name=" + enc(name) + "&mtime=" + mtime
+                + (size >= 0 ? "&size=" + size : "");
+        HttpURLConnection c = open("PUT", q, 120000);
+        c.setDoOutput(true);
+        c.setRequestProperty("Content-Type", "application/octet-stream");
+        if (size >= 0) c.setFixedLengthStreamingMode(size);
+        else c.setChunkedStreamingMode(64 * 1024);
+        try {
+            OutputStream os = c.getOutputStream();
+            byte[] buf = new byte[128 * 1024];
+            long sent = 0;
+            long lastReport = 0;
+            int r;
+            while ((r = in.read(buf)) != -1) {
+                if (cancel != null && cancel.get()) throw new IOException("Cancelado");
+                os.write(buf, 0, r);
+                sent += r;
+                if (progress != null && sent - lastReport > 256 * 1024) {
+                    progress.onProgress(sent, size);
+                    lastReport = sent;
+                }
+            }
+            os.close();
+            return readJson(c);
+        } catch (BoxException e) {
+            throw e;
+        } catch (IOException e) {
+            throw translate(e);
+        } finally {
+            c.disconnect();
+        }
+    }
+
+    private JSONObject call(String method, String pathAndQuery, int readTimeout) throws IOException {
+        HttpURLConnection c = open(method, pathAndQuery, readTimeout);
+        try {
+            if (method.equals("POST")) {
+                c.setDoOutput(true);
+                c.setFixedLengthStreamingMode(0);
+                c.getOutputStream().close();
+            }
+            return readJson(c);
+        } catch (BoxException e) {
+            throw e;
+        } catch (IOException e) {
+            throw translate(e);
+        } finally {
+            c.disconnect();
+        }
+    }
+
+    private HttpURLConnection open(String method, String pathAndQuery, int readTimeout) throws IOException {
+        HttpsURLConnection c = (HttpsURLConnection) new URL(base + pathAndQuery).openConnection();
+        c.setSSLSocketFactory(ssl);
+        c.setHostnameVerifier(ANY_HOST);
+        c.setRequestMethod(method);
+        c.setConnectTimeout(4000);
+        c.setReadTimeout(readTimeout);
+        c.setUseCaches(false);
+        if (!token.isEmpty()) c.setRequestProperty("X-Subelo-Token", token);
+        return c;
+    }
+
+    private static JSONObject readJson(HttpURLConnection c) throws IOException {
+        int code = c.getResponseCode();
+        InputStream in = code >= 400 ? c.getErrorStream() : c.getInputStream();
+        String body = "";
+        if (in != null) {
+            ByteArrayOutputStream b = new ByteArrayOutputStream();
+            byte[] buf = new byte[4096];
+            int r;
+            while ((r = in.read(buf)) != -1) b.write(buf, 0, r);
+            in.close();
+            body = b.toString("UTF-8");
+        }
+        JSONObject o;
+        try {
+            o = new JSONObject(body);
+        } catch (JSONException e) {
+            if (code >= 400) throw new BoxException(code, "Error " + code + " del box");
+            throw new IOException("Respuesta no válida del box");
+        }
+        if (code >= 400) throw new BoxException(code, o.optString("error", "Error " + code + " del box"));
+        return o;
+    }
+
+    private static String enc(String s) {
+        try {
+            return URLEncoder.encode(s == null ? "" : s, "UTF-8");
+        } catch (Exception e) {
+            return "";
+        }
+    }
+}
