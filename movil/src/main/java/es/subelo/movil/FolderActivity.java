@@ -29,6 +29,8 @@ import java.util.concurrent.Executors;
 public class FolderActivity extends Activity {
     private static final String UP = "↑  SUBIR UN NIVEL";
     static final String EXTRA_PICK = "pick";
+    static final String EXTRA_TITLE = "title";
+    static final String EXTRA_OK = "ok";
 
     private final ExecutorService bg = Executors.newSingleThreadExecutor();
     private final List<String> items = new ArrayList<String>();
@@ -50,7 +52,8 @@ public class FolderActivity extends Activity {
         col.setBackgroundColor(Brutal.CREAM);
         col.setPadding(pad, pad, pad - dp(6), pad);
 
-        TextView title = Brutal.title(this, pick ? "Mover a…" : "Elige carpeta", 24, Brutal.INK);
+        String t = getIntent().getStringExtra(EXTRA_TITLE);
+        TextView title = Brutal.title(this, t != null ? t : pick ? "Mover a…" : "Elige carpeta", 24, Brutal.INK);
         title.setPadding(0, 0, 0, dp(10));
         col.addView(title);
         pathText = Brutal.mono(this, 13, Brutal.PAPER);
@@ -100,7 +103,8 @@ public class FolderActivity extends Activity {
                 newFolder();
             }
         });
-        Button use = Brutal.button(this, pick ? "✓ Mover aquí" : "✓ Usar esta", Brutal.ORANGE, Brutal.BLACK, new View.OnClickListener() {
+        String ok = getIntent().getStringExtra(EXTRA_OK);
+        Button use = Brutal.button(this, ok != null ? ok : pick ? "✓ Mover aquí" : "✓ Usar esta", Brutal.ORANGE, Brutal.BLACK, new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 if (pick) {

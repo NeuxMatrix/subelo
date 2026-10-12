@@ -42,6 +42,10 @@ public class MainActivity extends Activity {
     private static final int REQ_FOLDER = 2;
     private static final int REQ_MEDIA_PERMS = 3;
     private static final int REQ_NOTIF = 4;
+    private static final int REQ_UPLOAD_DIR = 5;
+
+    /** Fotos compartidas o elegidas esperando a que digas en qué carpeta van. */
+    private ArrayList<Uri> pendingUpload;
 
     private final ExecutorService bg = Executors.newSingleThreadExecutor();
     private final Handler handler = new Handler();
@@ -72,6 +76,7 @@ public class MainActivity extends Activity {
             goLogin(getIntent());
             return;
         }
+        if (savedInstanceState != null) pendingUpload = savedInstanceState.getParcelableArrayList("pendientes");
         buildUi();
         if (Build.VERSION.SDK_INT >= 33
                 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
@@ -563,6 +568,20 @@ public class MainActivity extends Activity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQ_UPLOAD_DIR) {
+            ArrayList<Uri> uris = pendingUpload;
+            pendingUpload = null;
+            if (uris == null) return;
+            if (resultCode != RESULT_OK || data == null) {
+                Toast.makeText(this, "No he subido nada", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            String dir = data.getStringExtra("path");
+            UploadService.upload(this, uris, dir == null ? "" : dir);
+            statusText.setText("Subiendo " + uris.size() + (uris.size() == 1 ? " archivo" : " archivos")
+                    + " a DISCO:/" + Prefs.user(this) + "/" + (dir == null ? "" : dir));
+            return;
+        }
         if (requestCode == REQ_PICK && resultCode == RESULT_OK && data != null) {
             ArrayList<Uri> uris = new ArrayList<Uri>();
             ClipData cd = data.getClipData();
@@ -598,10 +617,21 @@ public class MainActivity extends Activity {
         startUpload(uris);
     }
 
+    /** Antes de subir, pregunta en qué carpeta del disco van. */
     private void startUpload(ArrayList<Uri> uris) {
         if (uris.isEmpty()) return;
-        UploadService.upload(this, uris);
-        statusText.setText("Subiendo " + uris.size() + (uris.size() == 1 ? " archivo…" : " archivos…"));
+        pendingUpload = uris;
+        int n = uris.size();
+        startActivityForResult(new Intent(this, FolderActivity.class)
+                .putExtra(FolderActivity.EXTRA_PICK, Prefs.dest(this))
+                .putExtra(FolderActivity.EXTRA_TITLE, n == 1 ? "¿Dónde la guardo?" : "¿Dónde guardo las " + n + "?")
+                .putExtra(FolderActivity.EXTRA_OK, "⬆ Subir aquí"), REQ_UPLOAD_DIR);
+    }
+
+    @Override
+    protected void onSaveInstanceState(Bundle out) {
+        super.onSaveInstanceState(out);
+        if (pendingUpload != null) out.putParcelableArrayList("pendientes", pendingUpload);
     }
 
     // ---------- subida automática ----------
