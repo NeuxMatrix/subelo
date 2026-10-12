@@ -35,13 +35,18 @@ import android.widget.Toast;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-/** Explorador del disco del box: ver fotos y vídeos, subir a una carpeta y descargar al móvil. */
+/**
+ * Mis fotos en el disco del box, por carpetas (cada carpeta con su portada y cuántas fotos tiene):
+ * verlas, subir a una carpeta y descargar al móvil.
+ */
 public class ExploreActivity extends Activity {
     private static final int REQ_PICK = 1;
     private static final int REQ_WRITE = 2;
@@ -53,6 +58,7 @@ public class ExploreActivity extends Activity {
     private final List<Object> entries = new ArrayList<Object>(); // String = carpeta, RemoteFile = fichero
     private final List<BoxClient.RemoteFile> files = new ArrayList<BoxClient.RemoteFile>();
     private final Set<String> selected = new HashSet<String>();
+    private final Map<String, BoxClient.Album> albums = new HashMap<String, BoxClient.Album>();
     private boolean selecting;
     private String path = "";
     private BoxClient bc;
@@ -193,11 +199,13 @@ public class ExploreActivity extends Activity {
                             if (!p.equals(path)) return;
                             entries.clear();
                             files.clear();
+                            albums.clear();
                             entries.addAll(l.folders);
                             entries.addAll(l.files);
                             files.addAll(l.files);
                             adapter.notifyDataSetChanged();
                             refreshSelection();
+                            if (!l.folders.isEmpty()) loadAlbums(p);
                         }
                     });
                 } catch (final IOException e) {
@@ -212,6 +220,29 @@ public class ExploreActivity extends Activity {
                         }
                     });
                 }
+            }
+        });
+    }
+
+    /** Portadas y número de fotos de las carpetas (llega después del listado para no hacerlo esperar). */
+    private void loadAlbums(final String p) {
+        bg.execute(new Runnable() {
+            @Override
+            public void run() {
+                final List<BoxClient.Album> list;
+                try {
+                    list = bc.albums(p);
+                } catch (IOException e) {
+                    return; // box antiguo o sin conexión: las carpetas se quedan sin portada
+                }
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (!p.equals(path)) return;
+                        for (BoxClient.Album a : list) albums.put(a.name, a);
+                        adapter.notifyDataSetChanged();
+                    }
+                });
             }
         });
     }
@@ -439,18 +470,31 @@ public class ExploreActivity extends Activity {
             img.setImageDrawable(null);
             img.setTag(null);
             if (e instanceof String) {
+                String name = (String) e;
+                BoxClient.Album al = albums.get(name);
                 cell.setBackground(cellBg(Brutal.PURPLE));
                 icon.setTypeface(Brutal.display(ExploreActivity.this));
                 icon.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
                 icon.setTextColor(Brutal.PAPER);
-                icon.setText(((String) e).toUpperCase(java.util.Locale.getDefault()));
-                label.setText("▸ CARPETA");
+                label.setSingleLine(false);
+                label.setMaxLines(2);
+                label.setEllipsize(TextUtils.TruncateAt.END);
+                if (al != null && al.cover != null) {
+                    icon.setText("");
+                    label.setText("▸ " + name.toUpperCase(java.util.Locale.getDefault()) + "\n" + count(al));
+                    loadThumb(img, al.cover);
+                } else {
+                    icon.setText(name.toUpperCase(java.util.Locale.getDefault()));
+                    label.setText(al == null ? "▸ CARPETA" : "▸ " + count(al));
+                }
                 check.setText("");
                 check.setBackground(null);
                 cell.setAlpha(1f);
                 return cell;
             }
             BoxClient.RemoteFile f = (BoxClient.RemoteFile) e;
+            label.setSingleLine(true);
+            label.setEllipsize(TextUtils.TruncateAt.MIDDLE);
             label.setText(f.name);
             boolean sel = selected.contains(f.name);
             cell.setBackground(cellBg(sel ? Brutal.ORANGE : Brutal.WHITE));
@@ -472,6 +516,13 @@ public class ExploreActivity extends Activity {
             }
             return cell;
         }
+    }
+
+    private static String count(BoxClient.Album a) {
+        if (a.media > 0) return a.media + (a.media == 1 ? " FOTO" : " FOTOS")
+                + (a.folders > 0 ? " · " + a.folders + " CARP." : "");
+        if (a.folders > 0) return a.folders + (a.folders == 1 ? " CARPETA" : " CARPETAS");
+        return "VACÍA";
     }
 
     private GradientDrawable cellBg(int fill) {

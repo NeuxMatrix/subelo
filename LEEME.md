@@ -12,6 +12,12 @@
 
 No hace falta root ni Internet: todo va por tu red local.
 
+## Novedades: álbumes, carpetas con portada y mapa
+
+- **Subir álbumes enteros** (móvil, «▤ Subir álbumes enteros»): eliges uno o varios álbumes de la galería (Cámara, WhatsApp, Descargas…) y cada uno va a su propia carpeta del disco, dentro de la carpeta de destino. Lo que ya estaba subido se salta, así que repetirlo solo sube lo nuevo. En Android 14, si al dar permiso elegiste «Seleccionar fotos», solo se ven esas: cámbialo a «Permitir todo».
+- **Mis fotos por carpetas** (móvil): cada carpeta muestra una foto de portada y cuántas fotos tiene.
+- **Mapa de mis fotos** (móvil y web, botón «◉ Mapa de fotos»): cada foto aparece donde se hizo, agrupadas por zonas, con filtro por año. La ubicación sale del GPS que guarda la cámara; las fotos hechas con la ubicación de la cámara apagada no salen. La primera vez el box tarda un poco en leer todas las fotos; después solo mira las nuevas. El fondo del mapa (OpenStreetMap/CARTO) necesita internet.
+
 ## Actualizaciones automáticas (GitHub)
 
 Cada vez que se sube un cambio de las apps a la rama `main` del repositorio, GitHub Actions (`.github/workflows/publicar.yml`) compila y firma los dos APK y los publica como una *release* `v<número>`. Las apps lo comprueban solas (como mucho una vez por hora):

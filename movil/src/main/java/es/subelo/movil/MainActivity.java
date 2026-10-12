@@ -187,18 +187,26 @@ public class MainActivity extends Activity {
                 pick();
             }
         }), Brutal.full(this));
-        main.addView(Brutal.button(this, "▦ Ver el disco del box", Brutal.PAPER, Brutal.BLACK, new View.OnClickListener() {
+        main.addView(Brutal.button(this, "▤ Subir álbumes enteros", Brutal.ORANGE, Brutal.BLACK, new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                if (Prefs.host(MainActivity.this) == null) {
-                    alert("Primero pulsa «Buscar el box».");
-                    return;
-                }
-                startActivity(new Intent(MainActivity.this, ExploreActivity.class));
+                openBox(AlbumsActivity.class);
+            }
+        }), Brutal.full(this));
+        main.addView(Brutal.button(this, "▦ Mis fotos por carpetas", Brutal.PAPER, Brutal.BLACK, new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                openBox(ExploreActivity.class);
+            }
+        }), Brutal.full(this));
+        main.addView(Brutal.button(this, "◉ Mapa de mis fotos", Brutal.PAPER, Brutal.BLACK, new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                openBox(MapActivity.class);
             }
         }), Brutal.full(this));
         TextView sub = Brutal.mono(this, 11, Brutal.PAPER);
-        sub.setText("VER · SUBIR A UNA CARPETA · DESCARGAR AL MÓVIL");
+        sub.setText("VER · SUBIR A UNA CARPETA · DESCARGAR · DÓNDE SE HICIERON");
         sub.setPadding(dp(2), dp(4), 0, 0);
         main.addView(sub);
         col.addView(main, Brutal.cardParams(this));
@@ -639,6 +647,14 @@ public class MainActivity extends Activity {
     }
 
     // ---------- utilidades ----------
+
+    private void openBox(Class<?> screen) {
+        if (Prefs.host(this) == null) {
+            alert("Primero pulsa «Buscar el box».");
+            return;
+        }
+        startActivity(new Intent(this, screen));
+    }
 
     private void alert(String msg) {
         new AlertDialog.Builder(this).setMessage(msg).setPositiveButton("Vale", null).show();

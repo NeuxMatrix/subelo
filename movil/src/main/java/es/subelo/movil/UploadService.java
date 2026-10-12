@@ -27,6 +27,7 @@ public class UploadService extends Service {
     private static final String ACTION_SCAN = "es.subelo.movil.SCAN";
     private static final String ACTION_CANCEL = "es.subelo.movil.CANCEL";
     private static final String ACTION_DOWNLOAD = "es.subelo.movil.DOWNLOAD";
+    private static final String ACTION_ALBUM = "es.subelo.movil.ALBUM";
     private static final String EXTRA_URIS = "uris";
     private static final String EXTRA_DIR = "dir";
 
@@ -72,6 +73,11 @@ public class UploadService extends Service {
         i.setClipData(cd);
         i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
         start(c, i);
+    }
+
+    /** Sube un álbum entero de la galería a una carpeta del disco (lo ya subido se salta). */
+    static void uploadAlbum(Context c, long bucket, String dir) {
+        start(c, new Intent(c, UploadService.class).setAction(ACTION_ALBUM).putExtra("bucket", bucket).putExtra(EXTRA_DIR, dir));
     }
 
     /** Sube todo lo pendiente de la galería (subida automática, en primer plano). */
@@ -131,6 +137,13 @@ public class UploadService extends Service {
                 }
                 for (Uri u : uris) queue.add(new UpTask(u, dir));
             }
+        } else if (ACTION_ALBUM.equals(action)) {
+            ArrayList<Uri> uris = AlbumsActivity.items(this, intent.getLongExtra("bucket", -1));
+            String dir = intent.getStringExtra(EXTRA_DIR);
+            synchronized (this) {
+                total += uris.size();
+            }
+            for (Uri u : uris) queue.add(new UpTask(u, dir));
         } else if (ACTION_DOWNLOAD.equals(action)) {
             ArrayList<String> dirs = intent.getStringArrayListExtra("dirs");
             ArrayList<String> names = intent.getStringArrayListExtra("names");

@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Súbelo · Mapa de fotos</title>
+<script>
+  // Mismo archivo en el box (navegador) y en la app del móvil (que pasa ?app=1&tema=oscuro|claro).
+  (function () {
+    var q = new URLSearchParams(location.search), t = null;
+    window.EN_APP = q.get('app') === '1';
+    if (EN_APP) t = q.get('tema') === 'oscuro' ? 'dark' : 'light';
+    else { try { t = localStorage.getItem('subelo-tema'); } catch (e) {} }
+    if (!t) t = window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    document.documentElement.setAttribute('data-theme', t);
+  })();
+</script>
+<link rel="stylesheet" href="/static/leaflet.css">
+<link rel="stylesheet" href="/static/markercluster.css">
+<style>
+  @font-face { font-family: "Archivo Black"; src: url(/static/ArchivoBlack.ttf) format("truetype"); font-display: swap; }
+  @font-face { font-family: "Space Grotesk"; src: url(/static/SpaceGrotesk-Medium.ttf) format("truetype"); font-weight: 500; font-display: swap; }
+  @font-face { font-family: "Space Mono"; src: url(/static/SpaceMono-Bold.ttf) format("truetype"); font-weight: 700; font-display: swap; }
+  :root { --purple:#7B2FF7; --orange:#FF6B1A; --black:#111; --paper:#FFF4E6; --ink:#111; --cream:#FFF4E6; --surface:#fff; --lilac:#E4D6FF; color-scheme: light; }
+  html[data-theme=dark] { --ink:#F3EADF; --cream:#16121C; --surface:#241D2E; --lilac:#2E2148; color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { display: flex; flex-direction: column; font-family: "Space Grotesk", system-ui, sans-serif; font-weight: 500; background: var(--cream); color: var(--ink); }
+  .mono { font-family: "Space Mono", ui-monospace, monospace; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; }
+  .top { display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: var(--black); color: var(--paper); border-bottom: 3px solid var(--ink); flex-wrap: wrap; }
+  h1 { font-family: "Archivo Black", Impact, sans-serif; font-size: 1.6rem; margin: 0; line-height: 1; text-shadow: 3px 3px 0 var(--purple); text-transform: uppercase; }
+  #stat { margin-left: auto; font-size: .72rem; background: var(--orange); color: var(--black); padding: 5px 9px; border: 2px solid var(--paper); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+  button, a.btn { font-family: "Space Mono", ui-monospace, monospace; font-weight: 700; text-transform: uppercase; font-size: .78rem; background: var(--paper); color: var(--black); border: 3px solid var(--paper); padding: 6px 10px; cursor: pointer; border-radius: 0; text-decoration: none; }
+  #years { display: flex; gap: 8px; padding: 9px 12px; overflow-x: auto; background: var(--cream); border-bottom: 3px solid var(--ink); scrollbar-width: none; }
+  #years:empty { display: none; }
+  #years button { background: var(--surface); color: var(--ink); border: 3px solid var(--ink); box-shadow: 3px 3px 0 var(--ink); flex: none; }
+  #years button.on { background: var(--purple); color: #fff; }
+  #map { flex: 1; min-height: 0; background: var(--cream); }
+  .leaflet-container { font-family: "Space Grotesk", system-ui, sans-serif; background: var(--cream); }
+  .leaflet-bar a { background: var(--surface); color: var(--ink); border-bottom-color: var(--ink); font-family: "Archivo Black", sans-serif; }
+  .leaflet-touch .leaflet-bar { border: 3px solid var(--ink); box-shadow: 4px 4px 0 var(--ink); border-radius: 0; }
+  .leaflet-touch .leaflet-bar a:first-child, .leaflet-touch .leaflet-bar a:last-child { border-radius: 0; }
+  .leaflet-control-attribution { font-size: 10px; }
+  .ph { width: 100%; height: 100%; background: var(--surface); border: 3px solid var(--ink); box-shadow: 4px 4px 0 var(--ink); overflow: hidden; position: relative; }
+  .ph img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .ph .n { position: absolute; right: -3px; top: -3px; background: var(--orange); color: #111; border: 3px solid var(--ink); font: 700 12px "Space Mono", monospace; padding: 1px 5px; min-width: 24px; text-align: center; }
+  .ph.vid::after { content: "▶"; position: absolute; left: 3px; bottom: 2px; color: #fff; text-shadow: 0 0 3px #000; font-size: 12px; }
+  #msg { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 500; width: min(420px, calc(100vw - 32px)); background: var(--surface); border: 3px solid var(--ink); box-shadow: 8px 8px 0 var(--purple); padding: 18px 18px 16px; display: none; }
+  #msg h2 { font-family: "Archivo Black", sans-serif; text-transform: uppercase; margin: 0 0 8px; font-size: 1.3rem; }
+  #msg p { margin: 0; line-height: 1.4; }
+  #wrap { position: relative; flex: 1; display: flex; min-height: 0; }
+  #viewer { display: none; position: fixed; inset: 0; background: #111; z-index: 1000; flex-direction: column; }
+  #viewer .bar { display: flex; gap: 10px; align-items: center; padding: 10px 14px; border-bottom: 3px solid var(--paper); color: var(--paper); }
+  #viewer .bar span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .8rem; }
+  #viewer .stage { flex: 1; display: flex; align-items: center; justify-content: center; min-height: 0; position: relative; }
+  #viewer img, #viewer video { max-width: calc(100vw - 30px); max-height: calc(100% - 30px); border: 4px solid var(--paper); box-shadow: 10px 10px 0 var(--purple); }
+  #viewer .nav { position: absolute; top: 50%; transform: translateY(-50%); font-size: 1.5rem; padding: 8px 14px; }
+  #prev { left: 10px; } #next { right: 10px; }
+  .main { background: var(--orange) !important; border-color: var(--orange) !important; }
+</style>
+</head>
+<body>
+<div class="top">
+  <a class="btn" id="back" href="/">‹ Volver</a>
+  <h1>Mapa</h1>
+  <span id="stat" class="mono">Cargando…</span>
+  <button id="theme" class="mono"></button>
+</div>
+<div id="years" class="mono"></div>
+<div id="wrap">
+  <div id="map"></div>
+  <div id="msg"><h2 id="msgT"></h2><p id="msgP"></p></div>
+</div>
+<div id="viewer">
+  <div class="bar mono"><span id="vname"></span><a class="btn main" id="vdl" download>⬇</a><button id="vclose">✕</button></div>
+  <div class="stage"><div id="vbody"></div><button class="nav" id="prev">‹</button><button class="nav" id="next">›</button></div>
+</div>
+<script src="/static/leaflet.js"></script>
+<script src="/static/markercluster.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const enc = encodeURIComponent;
+const VIDEO = /\.(mp4|mov|3gp|mkv|webm|m4v|avi)$/i;
+const dark = () => document.documentElement.getAttribute('data-theme') === 'dark';
+const fmt = n => n.toLocaleString('es-ES');
+let all = [], year = '', fitted = false, layer = null, lastKey = '', vlist = [], vi = -1;
+
+if (EN_APP) { $('back').hidden = true; $('theme').hidden = true; }
+
+const map = L.map('map', {zoomControl: true, worldCopyJump: true}).setView([40.2, -3.7], 5);
+let tiles = null;
+function setTiles() {
+  if (tiles) map.removeLayer(tiles);
+  tiles = L.tileLayer('https://{s}.basemaps.cartocdn.com/' + (dark() ? 'dark_all' : 'rastertiles/voyager') + '/{z}/{x}/{y}{r}.png', {
+    maxZoom: 19, subdomains: 'abcd',
+    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> · © <a href="https://carto.com/attributions">CARTO</a>'
+  }).addTo(map);
+}
+setTiles();
+
+const thumb = p => '/api/thumb?path=' + enc(p.d) + '&name=' + enc(p.n);
+function icon(p, count) {
+  const size = count ? 62 : 50;
+  return L.divIcon({
+    className: '', iconSize: [size, size], iconAnchor: [size / 2, size / 2],
+    html: '<div class="ph' + (VIDEO.test(p.n) ? ' vid' : '') + '"><img loading="lazy" src="' + thumb(p) + '" alt="">'
+      + (count ? '<span class="n">' + (count > 999 ? Math.round(count / 1000) + 'k' : count) + '</span>' : '') + '</div>'
+  });
+}
+
+function build() {
+  const list = year ? all.filter(p => (p.t || '').startsWith(year)) : all;
+  const key = year + '|' + list.length;
+  if (key === lastKey) return;
+  lastKey = key;
+  if (layer) map.removeLayer(layer);
+  layer = L.markerClusterGroup({
+    showCoverageOnHover: false, maxClusterRadius: 70, spiderfyDistanceMultiplier: 2.2, chunkedLoading: true,
+    iconCreateFunction: c => {
+      // portada: la foto más reciente del grupo
+      let best = null;
+      for (const m of c.getAllChildMarkers()) if (!best || (m.p.t || '') > (best.t || '')) best = m.p;
+      return icon(best, c.getChildCount());
+    }
+  });
+  const markers = list.map(p => {
+    const m = L.marker([p.la, p.lo], {icon: icon(p, 0)});
+    m.p = p;
+    m.on('click', () => openAt(p));
+    return m;
+  });
+  layer.addLayers(markers);
+  map.addLayer(layer);
+  if (!fitted && list.length) {
+    fitted = true;
+    map.fitBounds(L.latLngBounds(list.map(p => [p.la, p.lo])), {padding: [40, 40], maxZoom: 14});
+  }
+}
+
+function years() {
+  const ys = [...new Set(all.map(p => (p.t || '').slice(0, 4)).filter(Boolean))].sort().reverse();
+  const box = $('years');
+  if (ys.length < 2) { box.innerHTML = ''; return; }
+  box.innerHTML = '';
+  for (const y of [''].concat(ys)) {
+    const b = document.createElement('button');
+    b.textContent = y || 'Todas';
+    b.className = y === year ? 'on' : '';
+    b.onclick = () => { year = y; years(); build(); };
+    box.appendChild(b);
+  }
+}
+
+function message(title, text) {
+  $('msg').style.display = title ? 'block' : 'none';
+  $('msgT').textContent = title || '';
+  $('msgP').textContent = text || '';
+}
+
+async function load() {
+  let j;
+  try {
+    const r = await fetch('/api/places', {credentials: 'same-origin', cache: 'no-store'});
+    if (r.status === 401 && !EN_APP) { location.href = '/'; return; }
+    j = await r.json();
+    if (!r.ok) throw new Error(j.error || 'Error ' + r.status);
+  } catch (e) {
+    $('stat').textContent = 'Sin conexión';
+    message('No se pudo cargar', e.message || String(e));
+    setTimeout(load, 8000);
+    return;
+  }
+  all = j.places.map(a => ({d: a[0], n: a[1], la: a[2], lo: a[3], t: a[4], s: a[5]}));
+  years();
+  build();
+  $('stat').textContent = j.scanning
+    ? 'Buscando ubicaciones… ' + fmt(j.seen) + ' revisadas'
+    : fmt(all.length) + ' de ' + fmt(j.media) + ' con ubicación';
+  if (all.length) message();
+  else if (j.scanning) message('Buscando…', 'Estoy leyendo dónde se hizo cada foto. La primera vez tarda un poco; el mapa se va llenando solo.');
+  else if (!j.media) message('Aún no hay fotos', 'Cuando subas fotos al box aparecerán aquí, en el sitio donde se hicieron.');
+  else message('Ninguna foto tiene ubicación', 'Las fotos solo guardan dónde se hicieron si la cámara del móvil tiene activada la ubicación (en la app Cámara, ajustes › «Guardar ubicación»).');
+  if (j.scanning) setTimeout(load, 2500);
+}
+
+// ---------- ver una foto ----------
+function openAt(p) {
+  // las fotos que se ven ahora en el mapa, por fecha, para poder pasar con ‹ ›
+  const b = map.getBounds();
+  let list = (year ? all.filter(x => (x.t || '').startsWith(year)) : all).filter(x => b.contains([x.la, x.lo]));
+  list.sort((a, c) => (a.t || '').localeCompare(c.t || '') || a.n.localeCompare(c.n));
+  if (list.length > 300) {
+    const i = list.indexOf(p);
+    list = list.slice(Math.max(0, i - 150), Math.max(0, i - 150) + 300);
+  }
+  const idx = Math.max(0, list.indexOf(p));
+  if (EN_APP && window.SubeloApp) { SubeloApp.ver(JSON.stringify(list.map(x => [x.d, x.n, x.s])), idx); return; }
+  vlist = list; show(idx);
+}
+function show(i) {
+  if (i < 0 || i >= vlist.length) return;
+  vi = i;
+  const p = vlist[i], url = '/api/file?path=' + enc(p.d) + '&name=' + enc(p.n);
+  $('vname').textContent = (i + 1) + '/' + vlist.length + ' · ' + (p.t || '') + ' · ' + (p.d ? p.d + '/' : '') + p.n;
+  $('vdl').href = url + '&download=1';
+  $('vbody').innerHTML = '';
+  const el = document.createElement(VIDEO.test(p.n) ? 'video' : 'img');
+  if (el.tagName === 'VIDEO') { el.controls = true; el.autoplay = true; }
+  el.src = url;
+  $('vbody').appendChild(el);
+  $('viewer').style.display = 'flex';
+  $('prev').style.visibility = i > 0 ? 'visible' : 'hidden';
+  $('next').style.visibility = i < vlist.length - 1 ? 'visible' : 'hidden';
+}
+function closeViewer() { $('vbody').innerHTML = ''; $('viewer').style.display = 'none'; vi = -1; }
+$('vclose').onclick = closeViewer;
+$('prev').onclick = () => show(vi - 1);
+$('next').onclick = () => show(vi + 1);
+document.addEventListener('keydown', e => {
+  if (vi < 0) return;
+  if (e.key === 'Escape') closeViewer();
+  else if (e.key === 'ArrowLeft') show(vi - 1);
+  else if (e.key === 'ArrowRight') show(vi + 1);
+});
+
+function themeLabel() { $('theme').textContent = dark() ? '☀' : '☾'; }
+$('theme').onclick = () => {
+  const t = dark() ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', t);
+  try { localStorage.setItem('subelo-tema', t); } catch (e) {}
+  themeLabel();
+  setTiles();
+};
+themeLabel();
+load();
+</script>
+</body>
+</html>

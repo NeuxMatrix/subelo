@@ -33,9 +33,10 @@
   #crumbs a:last-child { background: var(--purple); color: #fff; }
   #crumbs a:hover { background: var(--orange); color: var(--black); }
   .bar { display: flex; flex-wrap: wrap; gap: 10px; }
-  button, label.btn { font-family: "Space Mono", ui-monospace, monospace; font-weight: 700; text-transform: uppercase; font-size: .85rem; background: var(--surface); color: var(--ink); border: var(--b); box-shadow: var(--sh); padding: 9px 13px; cursor: pointer; transition: transform .06s, box-shadow .06s; border-radius: 0; }
-  button:hover, label.btn:hover { background: var(--lilac); }
-  button:active, label.btn:active { transform: translate(5px, 5px); box-shadow: 0 0 0 var(--ink); }
+  button, label.btn, a.btn { font-family: "Space Mono", ui-monospace, monospace; font-weight: 700; text-transform: uppercase; font-size: .85rem; background: var(--surface); color: var(--ink); border: var(--b); box-shadow: var(--sh); padding: 9px 13px; cursor: pointer; transition: transform .06s, box-shadow .06s; border-radius: 0; }
+  a.btn { text-decoration: none; display: inline-block; }
+  button:hover, label.btn:hover, a.btn:hover { background: var(--lilac); }
+  button:active, label.btn:active, a.btn:active { transform: translate(5px, 5px); box-shadow: 0 0 0 var(--ink); }
   button:focus-visible, label.btn:focus-within { outline: 3px solid var(--orange); outline-offset: 3px; }
   .main { background: var(--orange) !important; color: var(--black) !important; }
   .alt { background: var(--purple) !important; color: #fff !important; }
@@ -112,6 +113,7 @@
       <button id="selAll">Seleccionar todo</button>
       <button id="dlSel" class="alt" disabled>⬇ Descargar</button>
       <button id="dlAll">⬇ Carpeta .zip</button>
+      <a class="btn alt" href="/mapa.html">◉ Mapa de fotos</a>
     </div>
   </div>
 </header>

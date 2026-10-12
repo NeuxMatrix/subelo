@@ -60,6 +60,12 @@ final class BoxClient {
         }
     }
 
+    static final class Album {
+        String name;
+        int media, folders;
+        RemoteFile cover;
+    }
+
     static final class Listing {
         final List<String> folders = new ArrayList<String>();
         final List<RemoteFile> files = new ArrayList<RemoteFile>();
@@ -261,6 +267,31 @@ final class BoxClient {
             }
         }
         return l;
+    }
+
+    /** Subcarpetas con su portada y cuántas fotos tienen. */
+    List<Album> albums(String path) throws IOException {
+        JSONObject o = call("GET", "/api/albums?path=" + enc(path), 30000);
+        List<Album> out = new ArrayList<Album>();
+        JSONArray a = o.optJSONArray("albums");
+        if (a == null) return out;
+        for (int i = 0; i < a.length(); i++) {
+            JSONObject x = a.optJSONObject(i);
+            if (x == null) continue;
+            Album al = new Album();
+            al.name = x.optString("name");
+            al.media = x.optInt("media");
+            al.folders = x.optInt("folders");
+            JSONObject c = x.optJSONObject("cover");
+            if (c != null) al.cover = new RemoteFile(c.optString("path"), c.optString("name"), c.optLong("size", -1), 0);
+            out.add(al);
+        }
+        return out;
+    }
+
+    /** JSON con las fotos que tienen ubicación (para el mapa). */
+    String places() throws IOException {
+        return call("GET", "/api/places", 60000).toString();
     }
 
     /** Miniatura JPEG o null si el box no puede generarla. */

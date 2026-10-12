@@ -55,7 +55,18 @@
         <activity
             android:name=".ExploreActivity"
             android:exported="false"
-            android:label="Disco del box" />
+            android:label="Mis fotos" />
+
+        <activity
+            android:name=".AlbumsActivity"
+            android:exported="false"
+            android:label="Subir álbumes" />
+
+        <activity
+            android:name=".MapActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|screenLayout"
+            android:label="Mapa de fotos" />
 
         <activity
             android:name=".ViewerActivity"

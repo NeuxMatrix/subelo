@@ -251,10 +251,15 @@ final class HttpServer {
             send(out, 200, "text/html; charset=utf-8", readAsset("index.html"));
             return;
         }
+        if (path.equals("/mapa.html")) {
+            send(out, 200, "text/html; charset=utf-8", readAsset("mapa.html"));
+            return;
+        }
         if (path.startsWith("/static/")) {
             String n = path.substring(8);
             String asset = n.equals("logo.png") ? "logo.png"
-                    : n.matches("[A-Za-z-]+\\.ttf") ? "fonts/" + n : null;
+                    : n.matches("[A-Za-z-]+\\.ttf") ? "fonts/" + n
+                    : n.matches("(leaflet|markercluster)\\.(js|css)") ? "mapa/" + n : null;
             byte[] data = null;
             if (asset != null) {
                 try {
@@ -266,7 +271,8 @@ final class HttpServer {
                 error(out, 404, "No encontrado");
                 return;
             }
-            sendHead(out, 200, asset.endsWith(".png") ? "image/png" : "font/ttf", data.length,
+            sendHead(out, 200, asset.endsWith(".png") ? "image/png" : asset.endsWith(".js") ? "text/javascript; charset=utf-8"
+                    : asset.endsWith(".css") ? "text/css; charset=utf-8" : "font/ttf", data.length,
                     "Cache-Control: max-age=2592000\r\n");
             out.write(data);
             out.flush();
@@ -426,11 +432,76 @@ final class HttpServer {
             sendHead(out, 200, "image/jpeg", t.length, "Cache-Control: max-age=604800\r\n");
             out.write(t);
             out.flush();
+        } else if (path.equals("/api/albums")) {
+            Object d = st.dir(dirRel, rel.isEmpty());
+            if (d == null) {
+                error(out, 404, "La carpeta no existe");
+                return;
+            }
+            JSONArray arr = new JSONArray();
+            for (String n : st.listDirs(d)) {
+                Object sub = st.dir(dirRel + "/" + n, false);
+                if (sub == null) continue;
+                JSONObject a = new JSONObject();
+                a.put("name", n);
+                int media = 0;
+                Store.FileInfo first = null;
+                for (Store.FileInfo f : st.listFiles(sub)) {
+                    if (!Thumbs.isImage(f.name) && !Thumbs.isVideo(f.name)) continue;
+                    media++;
+                    if (first == null) first = f;
+                }
+                a.put("media", media);
+                List<String> subs = st.listDirs(sub);
+                a.put("folders", subs.size());
+                String coverDir = rel.isEmpty() ? n : rel + "/" + n;
+                if (first == null) {
+                    String[] found = cover(st, dirRel + "/" + n, coverDir, subs, 2);
+                    if (found != null) {
+                        coverDir = found[0];
+                        first = new Store.FileInfo(found[1], Long.parseLong(found[2]), 0);
+                    }
+                }
+                if (first != null) {
+                    JSONObject c = new JSONObject();
+                    c.put("path", coverDir);
+                    c.put("name", first.name);
+                    c.put("size", first.size);
+                    a.put("cover", c);
+                }
+                arr.put(a);
+            }
+            JSONObject o = new JSONObject();
+            o.put("path", rel);
+            o.put("albums", arr);
+            json(out, 200, o);
+        } else if (path.equals("/api/places")) {
+            send(out, 200, "application/json; charset=utf-8", Places.json(ctx, st, user).getBytes(UTF8));
         } else if (path.equals("/api/zip")) {
             zip(st, dirRel, names, out);
         } else {
             error(out, 404, "No encontrado");
         }
+    }
+
+    /** Portada de una carpeta sin fotos sueltas: la primera foto de sus subcarpetas (año → mes). */
+    private static String[] cover(Store st, String dirRel, String rel, List<String> subs, int depth) throws IOException {
+        int tried = 0;
+        for (String n : subs) {
+            if (Store.hidden(n) || ++tried > 6) break;
+            Object d = st.dir(dirRel + "/" + n, false);
+            if (d == null) continue;
+            for (Store.FileInfo f : st.listFiles(d)) {
+                if (Thumbs.isImage(f.name) || Thumbs.isVideo(f.name)) {
+                    return new String[]{rel + "/" + n, f.name, String.valueOf(f.size)};
+                }
+            }
+            if (depth > 1) {
+                String[] r = cover(st, dirRel + "/" + n, rel + "/" + n, st.listDirs(d), depth - 1);
+                if (r != null) return r;
+            }
+        }
+        return null;
     }
 
     private void upload(Store st, String dirRel, Map<String, String> params, InputStream body,
