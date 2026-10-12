@@ -29,7 +29,7 @@ import java.net.URL;
 final class Updater {
     static final String REPO = "NeuxMatrix/subelo";
     static final String ASSET = "Subelo-movil.apk";
-    private static final long CHECK_EVERY_MS = 60 * 60 * 1000L;
+    private static final long CHECK_EVERY_MS = 10 * 60 * 1000L;
 
     static final class Release {
         int code;
@@ -67,7 +67,16 @@ final class Updater {
         return c.getSharedPreferences("actualizaciones", Context.MODE_PRIVATE);
     }
 
-    /** Como check(), pero como mucho una consulta a GitHub por hora (si no, devuelve lo último visto). */
+    /** Consulta GitHub ya (botón «Buscar actualizaciones») y guarda el resultado. */
+    static Release checkNow(Context c) throws IOException {
+        Release r = check(c);
+        prefs(c).edit().putLong("last", System.currentTimeMillis()).putInt("code", r == null ? 0 : r.code)
+                .putString("name", r == null ? null : r.name).putString("url", r == null ? null : r.url)
+                .putLong("size", r == null ? -1 : r.size).apply();
+        return r;
+    }
+
+    /** Como check(), pero como mucho una consulta a GitHub cada 10 minutos (si no, devuelve lo último visto). */
     static Release checkThrottled(Context c) {
         SharedPreferences p = prefs(c);
         long now = System.currentTimeMillis();

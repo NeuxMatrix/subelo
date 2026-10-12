@@ -26,6 +26,7 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.Switch;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import org.json.JSONObject;
 
@@ -99,7 +100,7 @@ public class MainActivity extends Activity {
         }
         handler.post(tick);
         refreshBox();
-        checkUpdate();
+        checkUpdate(false);
         showDest();
     }
 
@@ -175,6 +176,7 @@ public class MainActivity extends Activity {
             }
         }), Brutal.full(this));
         col.addView(box, Brutal.cardParams(this));
+        Brutal.foldable(this, box, "box", 1);
 
         // acciones principales
         LinearLayout main = Brutal.card(this, null, Brutal.PURPLE);
@@ -209,7 +211,7 @@ public class MainActivity extends Activity {
         sub.setText("VER · SUBIR A UNA CARPETA · DESCARGAR · DÓNDE SE HICIERON");
         sub.setPadding(dp(2), dp(4), 0, 0);
         main.addView(sub);
-        col.addView(main, Brutal.cardParams(this));
+        col.addView(main, col.indexOfChild(box), Brutal.cardParams(this)); // lo primero, lo que más se usa
 
         statusText = Brutal.mono(this, 13, Brutal.INK);
         statusText.setBackground(Brutal.block(this, Brutal.PEACH, 4, 3));
@@ -244,6 +246,7 @@ public class MainActivity extends Activity {
         });
         dest.addView(organize);
         col.addView(dest, Brutal.cardParams(this));
+        Brutal.foldable(this, dest, "destino", 1);
 
         // 03 · automático
         LinearLayout auto = Brutal.card(this, "03 // subida automática", Brutal.WHITE);
@@ -297,11 +300,18 @@ public class MainActivity extends Activity {
         autoText.setPadding(0, dp(6), 0, 0);
         auto.addView(autoText);
         col.addView(auto, Brutal.cardParams(this));
+        Brutal.foldable(this, auto, "auto", 1);
 
         TextView foot = Brutal.mono(this, 11, Brutal.INK);
         foot.setText("SÚBELO " + Updater.installedName(this) + " · CONEXIÓN CIFRADA 🔒");
         foot.setPadding(dp(2), dp(10), 0, 0);
         col.addView(foot);
+        col.addView(button("Buscar actualizaciones", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                checkUpdate(true);
+            }
+        }), Brutal.full(this));
 
         setContentView(scroll);
     }
@@ -430,14 +440,32 @@ public class MainActivity extends Activity {
 
     // ---------- actualizaciones ----------
 
-    private void checkUpdate() {
+    private void checkUpdate(final boolean now) {
+        if (now) Toast.makeText(this, "Buscando actualizaciones…", Toast.LENGTH_SHORT).show();
         bg.execute(new Runnable() {
             @Override
             public void run() {
-                final Updater.Release r = Updater.checkThrottled(MainActivity.this);
+                Updater.Release found;
+                String error = null;
+                if (now) {
+                    try {
+                        found = Updater.checkNow(MainActivity.this);
+                    } catch (IOException e) {
+                        found = null;
+                        error = e.getMessage();
+                    }
+                } else {
+                    found = Updater.checkThrottled(MainActivity.this);
+                }
+                final Updater.Release r = found;
+                final String err = error;
                 runOnUiThread(new Runnable() {
                     @Override
                     public void run() {
+                        if (now && r == null) {
+                            alert(err != null ? "No he podido mirar si hay versión nueva: " + err
+                                    : "Ya tienes la última versión (" + Updater.installedName(MainActivity.this) + ").");
+                        }
                         update = r;
                         updateCard.setVisibility(r == null ? View.GONE : View.VISIBLE);
                         if (r != null) updateText.setText("Hay una versión nueva de Súbelo (" + r.name + "). Tienes la "

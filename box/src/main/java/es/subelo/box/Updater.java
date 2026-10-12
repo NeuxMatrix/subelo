@@ -29,7 +29,7 @@ import java.net.URL;
 final class Updater {
     static final String REPO = "NeuxMatrix/subelo";
     static final String ASSET = "Subelo-Servidor-box.apk";
-    private static final long CHECK_EVERY_MS = 60 * 60 * 1000L;
+    private static final long CHECK_EVERY_MS = 10 * 60 * 1000L;
 
     static final class Release {
         int code;

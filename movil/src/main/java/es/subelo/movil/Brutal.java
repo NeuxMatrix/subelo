@@ -214,6 +214,39 @@ final class Brutal {
         return card;
     }
 
+    /**
+     * Tarjeta plegable: tocando la etiqueta se abre o se cierra. Plegada solo enseña la etiqueta y
+     * las primeras «keep» líneas (el resumen). Se recuerda abierta o cerrada; empieza cerrada.
+     */
+    static void foldable(final Context c, final LinearLayout card, final String key, final int keep) {
+        if (card.getChildCount() == 0 || !(card.getChildAt(0) instanceof TextView)) return;
+        final TextView tag = (TextView) card.getChildAt(0);
+        final String label = tag.getText().toString();
+        final android.content.SharedPreferences p = c.getSharedPreferences("plegado", Context.MODE_PRIVATE);
+        tag.setClickable(true);
+        tag.setFocusable(true);
+        tag.setMinHeight(dp(c, 36));
+        tag.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        final Runnable apply = new Runnable() {
+            @Override
+            public void run() {
+                boolean open = p.getBoolean(key, false);
+                tag.setText(label + (open ? "   ▾ CERRAR" : "   ▸ ABRIR"));
+                for (int i = 1 + keep; i < card.getChildCount(); i++) {
+                    card.getChildAt(i).setVisibility(open ? View.VISIBLE : View.GONE);
+                }
+            }
+        };
+        tag.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                p.edit().putBoolean(key, !p.getBoolean(key, false)).apply();
+                apply.run();
+            }
+        });
+        apply.run();
+    }
+
     static LinearLayout.LayoutParams cardParams(Context c) {
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
