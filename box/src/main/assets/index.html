@@ -104,6 +104,12 @@
   #pickList div:hover { background: var(--lilac); }
   #pickList .up { background: var(--lilac); }
   #pick .row { display: flex; gap: 10px; flex-wrap: wrap; padding: 14px 16px 16px; }
+  #accessNote { margin: -4px 0 12px; font-size: .8rem; background: var(--lilac); border: 2px solid var(--ink); padding: 5px 10px; display: inline-block; }
+  .tile.folder.virtual, .tile.folder.virtual .img { background: var(--orange); color: var(--black); }
+  #shareBox { display: none; position: fixed; inset: 0; z-index: 36; background: rgba(17,17,17,.6); align-items: center; justify-content: center; padding: 16px; }
+  #shareBox .box { background: var(--cream); border: var(--b); box-shadow: 10px 10px 0 var(--purple); width: min(480px, 100%); padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+  #shareBox h3 { font-family: "Archivo Black", sans-serif; text-transform: uppercase; margin: 0 0 4px; }
+  [hidden] { display: none !important; }
 </style>
 </head>
 <body>
@@ -118,6 +124,7 @@
   </div>
   <div class="tools">
     <div id="crumbs" class="mono"></div>
+    <div id="accessNote" class="mono" hidden></div>
     <div class="bar">
       <label class="btn main">⬆ Subir fotos<input type="file" id="files" multiple></label>
       <label class="btn">⬆ Subir carpeta<input type="file" id="folder" webkitdirectory multiple></label>
@@ -128,6 +135,7 @@
       <button id="ren" disabled>✎ Renombrar</button>
       <button id="mv" disabled>↦ Mover</button>
       <button id="del" class="danger" disabled>🗑 Borrar</button>
+      <button id="share" class="alt" hidden>👥 Compartir</button>
       <a class="btn alt" href="/mapa.html">◉ Mapa de fotos</a>
     </div>
   </div>
@@ -159,6 +167,13 @@
     </form>
   </div>
 </div>
+<div id="shareBox"><div class="box">
+  <h3 id="shareTitle"></h3>
+  <button id="shareView"></button>
+  <button id="shareAdd"></button>
+  <button id="shareOff" class="danger">✕ Dejar de compartir</button>
+  <button id="shareNo">Cancelar</button>
+</div></div>
 <div id="pick"><div class="box">
   <h3 id="pickTitle">Mover a…</h3>
   <div id="pickPath" class="mono"></div>
@@ -172,6 +187,8 @@ let path = '';
 let files = [];
 const selected = new Set();
 const selDirs = new Set();
+const VIRTUAL = '👥 Compartido conmigo';
+let access = 'own', owner = null, sharedWith = {};
 const $ = id => document.getElementById(id);
 const enc = encodeURIComponent;
 const isImg = n => /\.(jpe?g|png|gif|webp|bmp|heic|heif)$/i.test(n);
@@ -257,17 +274,35 @@ async function load() {
       : 'El disco no está disponible en el box.';
     const j = await api('/api/list?path=' + enc(path));
     files = j.files;
+    access = j.access || 'own'; owner = j.owner || null; sharedWith = j.sharedWith || {};
+    applyAccess();
     crumbs();
     render(j.folders);
   } catch (e) { $('info').textContent = e.message; }
 }
+// qué se puede hacer aquí: lo tuyo todo; lo compartido contigo, ver (y añadir si te dejan)
+function applyAccess() {
+  const own = access === 'own', add = own || access === 'subir';
+  $('files').parentElement.hidden = $('folder').parentElement.hidden = $('mk').hidden = !add;
+  $('del').hidden = $('mv').hidden = $('ren').hidden = !own;
+  $('dlAll').hidden = $('selAll').hidden = access === 'virtual';
+  $('share').hidden = !own || !path;
+  $('vdel').hidden = $('vmv').hidden = !own;
+  const who = Object.keys(sharedWith);
+  const note = access === 'virtual' ? '👥 Lo que te han compartido'
+    : !own ? 'De ' + owner + (access === 'subir' ? ' · puedes ver y añadir fotos' : ' · solo ver')
+    : who.length ? '👥 Compartida con ' + who.map(w => w + (sharedWith[w] === 'subir' ? ' (ver y añadir)' : ' (ver)')).join(', ') : '';
+  $('accessNote').textContent = note; $('accessNote').hidden = !note;
+}
 function render(folders) {
   const g = $('grid'); g.innerHTML = '';
   folders.forEach(f => {
-    const t = document.createElement('div'); t.className = 'tile folder' + (selDirs.has(f) ? ' sel' : '');
-    t.innerHTML = '<input type="checkbox"><div class="img"></div><div class="name mono">▸ Carpeta</div>';
+    const virt = !path && f === VIRTUAL;
+    const t = document.createElement('div'); t.className = 'tile folder' + (selDirs.has(f) ? ' sel' : '') + (virt ? ' virtual' : '');
+    t.innerHTML = '<input type="checkbox"><div class="img"></div><div class="name mono">' + (virt ? '▸ De otros' : '▸ Carpeta') + '</div>';
     t.querySelector('.img').textContent = f;
     const cb = t.querySelector('input'); cb.checked = selDirs.has(f);
+    if (virt || access !== 'own') cb.hidden = true;
     cb.onclick = ev => { ev.stopPropagation(); cb.checked ? selDirs.add(f) : selDirs.delete(f); t.classList.toggle('sel', cb.checked); updateSel(); };
     t.onclick = () => go(join(path, f));
     g.appendChild(t);
@@ -287,6 +322,7 @@ function render(folders) {
     t.querySelector('.name').textContent = f.name;
     t.querySelector('.meta').textContent = fmt(f.size) + (f.mtime ? ' · ' + new Date(f.mtime).toLocaleDateString() : '');
     const cb = t.querySelector('input'); cb.checked = selected.has(f.name);
+    if (access !== 'own') cb.title = 'Para descargar';
     cb.onclick = ev => { ev.stopPropagation(); toggle(f.name, t, cb.checked); };
     t.onclick = () => openViewer(i);
     g.appendChild(t);
@@ -399,6 +435,35 @@ $('pickOk').onclick = async () => {
   } catch (e) { alert(e.message); }
 };
 $('mv').onclick = () => movePick([...selected, ...selDirs], () => { selected.clear(); selDirs.clear(); load(); });
+
+// ---------- compartir ----------
+let shareWho = null;
+$('share').onclick = async () => {
+  let j;
+  try { j = await api('/api/shares'); } catch (e) { alert(e.message); return; }
+  shareWho = j.others[0];
+  if (!shareWho) return;
+  const now = sharedWith[shareWho];
+  $('shareTitle').textContent = 'Compartir «' + path.split('/').pop() + '» con ' + shareWho;
+  $('shareView').textContent = (now === 'ver' ? '✓ ' : '') + shareWho + ' puede verla y descargar';
+  $('shareAdd').textContent = (now === 'subir' ? '✓ ' : '') + shareWho + ' puede verla y añadir fotos';
+  $('shareView').className = now === 'ver' ? 'main' : '';
+  $('shareAdd').className = now === 'subir' ? 'main' : '';
+  $('shareOff').hidden = !now;
+  $('shareBox').style.display = 'flex';
+};
+async function doShare(mode) {
+  try {
+    if (mode) await post('/api/share', [['path', path], ['with', shareWho], ['mode', mode]]);
+    else await post('/api/unshare', [['path', path], ['with', shareWho]]);
+    $('shareBox').style.display = 'none';
+    load();
+  } catch (e) { alert(e.message); }
+}
+$('shareView').onclick = () => doShare('ver');
+$('shareAdd').onclick = () => doShare('subir');
+$('shareOff').onclick = () => doShare(null);
+$('shareNo').onclick = () => { $('shareBox').style.display = 'none'; };
 
 // ---------- visor ----------
 let vi = -1;

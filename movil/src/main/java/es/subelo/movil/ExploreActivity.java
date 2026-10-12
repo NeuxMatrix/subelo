@@ -64,7 +64,8 @@ public class ExploreActivity extends Activity {
     private String path = "";
     private BoxClient bc;
     private TextView pathText;
-    private Button downloadButton, uploadButton, folderButton, moveButton, deleteButton, renameButton;
+    private Button downloadButton, uploadButton, folderButton, moveButton, deleteButton, renameButton, shareButton;
+    private BoxClient.Listing current = new BoxClient.Listing();
     private Adapter adapter;
     private List<BoxClient.RemoteFile> pendingDownload;
 
@@ -110,6 +111,13 @@ public class ExploreActivity extends Activity {
         grid.setOnItemLongClickListener(new AdapterView.OnItemLongClickListener() {
             @Override
             public boolean onItemLongClick(AdapterView<?> parent, View view, int pos, long id) {
+                Object e = entries.get(pos);
+                if (!current.own() || BoxClient.SHARED_WITH_ME.equals(e) && path.isEmpty()) {
+                    Toast.makeText(ExploreActivity.this, current.owner != null && !current.own()
+                            ? "Esto es de " + current.owner + ": solo puede borrarlo o moverlo " + current.owner
+                            : "Aquí está lo que te han compartido", Toast.LENGTH_SHORT).show();
+                    return true;
+                }
                 selecting = true;
                 toggle(key(entries.get(pos)));
                 return true;
@@ -141,6 +149,13 @@ public class ExploreActivity extends Activity {
             }
         });
         bar.addView(folderButton, Brutal.half(this));
+        shareButton = Brutal.button(this, "👥", Brutal.LILAC, Brutal.INK, new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                shareDialog();
+            }
+        });
+        bar.addView(shareButton, Brutal.spaced(this, dp(56), LinearLayout.LayoutParams.WRAP_CONTENT, 0));
         moveButton = Brutal.button(this, "↦ Mover", Brutal.PAPER, Brutal.BLACK, new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -224,6 +239,7 @@ public class ExploreActivity extends Activity {
                             entries.clear();
                             files.clear();
                             albums.clear();
+                            current = l;
                             entries.addAll(l.folders);
                             entries.addAll(l.files);
                             files.addAll(l.files);
@@ -273,18 +289,28 @@ public class ExploreActivity extends Activity {
 
     private void refreshSelection() {
         String where = "DISCO:/" + Prefs.user(this) + "/" + path;
+        if ("virtual".equals(current.access)) {
+            where = "👥 LO QUE TE HAN COMPARTIDO";
+        } else if (!current.own()) {
+            where += "\nDE " + current.owner + ("subir".equals(current.access) ? " · PUEDES VER Y AÑADIR" : " · SOLO VER");
+        } else if (!current.sharedWith.isEmpty()) {
+            where += "\n👥 COMPARTIDA CON " + android.text.TextUtils.join(", ", current.sharedWith.keySet());
+        }
         if (selecting) {
             pathText.setText(where + "\n■ " + selected.size() + " ELEGIDOS · TOCA PARA AÑADIR · ATRÁS PARA SALIR");
             int nFiles = selectedFiles().size();
             downloadButton.setText("⬇ " + nFiles);
             downloadButton.setVisibility(nFiles > 0 ? View.VISIBLE : View.GONE);
         } else {
-            pathText.setText(where + "\n" + files.size() + " ARCHIVOS · MANTÉN PULSADO PARA BORRAR O MOVER");
+            pathText.setText(where + "\n" + files.size() + " ARCHIVOS"
+                    + (current.own() ? " · MANTÉN PULSADO PARA BORRAR O MOVER" : ""));
             downloadButton.setText("⬇ TODO");
             downloadButton.setVisibility(View.VISIBLE);
         }
-        uploadButton.setVisibility(selecting ? View.GONE : View.VISIBLE);
-        folderButton.setVisibility(selecting ? View.GONE : View.VISIBLE);
+        boolean add = !selecting && current.canAdd();
+        uploadButton.setVisibility(add ? View.VISIBLE : View.GONE);
+        folderButton.setVisibility(add ? View.VISIBLE : View.GONE);
+        shareButton.setVisibility(!selecting && current.own() && !path.isEmpty() ? View.VISIBLE : View.GONE);
         moveButton.setVisibility(selecting ? View.VISIBLE : View.GONE);
         deleteButton.setVisibility(selecting ? View.VISIBLE : View.GONE);
         renameButton.setVisibility(selecting && selected.size() == 1 ? View.VISIBLE : View.GONE);
@@ -538,6 +564,59 @@ public class ExploreActivity extends Activity {
         });
     }
 
+    // ---------- compartir ----------
+
+    private void shareDialog() {
+        final String folder = path;
+        final String name = folder.substring(folder.lastIndexOf('/') + 1);
+        bg.execute(new Runnable() {
+            @Override
+            public void run() {
+                final List<String> others;
+                try {
+                    if (bc == null) bc = BoxClient.connect(ExploreActivity.this);
+                    others = bc.others();
+                } catch (final IOException e) {
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            Toast.makeText(ExploreActivity.this, e.getMessage(), Toast.LENGTH_LONG).show();
+                        }
+                    });
+                    return;
+                }
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (others.isEmpty() || !folder.equals(path)) return;
+                        final String who = others.get(0); // solo hay dos usuarios: el otro
+                        final String now = current.sharedWith.get(who);
+                        List<String> opts = new ArrayList<String>();
+                        opts.add(("ver".equals(now) ? "✓ " : "") + who + " puede verla y descargar");
+                        opts.add(("subir".equals(now) ? "✓ " : "") + who + " puede verla y añadir fotos");
+                        if (now != null) opts.add("✕ Dejar de compartir");
+                        new AlertDialog.Builder(ExploreActivity.this)
+                                .setTitle("Compartir «" + name + "» con " + who)
+                                .setItems(opts.toArray(new String[0]), new DialogInterface.OnClickListener() {
+                                    @Override
+                                    public void onClick(DialogInterface d, final int which) {
+                                        ExploreActivity.this.run(which == 2 ? "Ya no la compartes con " + who : "Compartida con " + who, new Op() {
+                                            @Override
+                                            public void go(BoxClient c) throws IOException {
+                                                if (which == 2) c.unshare(folder, who);
+                                                else c.share(folder, who, which == 0 ? "ver" : "subir");
+                                            }
+                                        });
+                                    }
+                                })
+                                .setNegativeButton("Cancelar", null)
+                                .show();
+                    }
+                });
+            }
+        });
+    }
+
     // ---------- nueva carpeta ----------
 
     private void newFolder() {
@@ -660,13 +739,17 @@ public class ExploreActivity extends Activity {
                 label.setEllipsize(TextUtils.TruncateAt.END);
                 boolean fsel = selected.contains(name + "/");
                 cell.setBackground(cellBg(fsel ? Brutal.ORANGE : Brutal.PURPLE));
+                boolean special = path.isEmpty() && BoxClient.SHARED_WITH_ME.equals(name);
+                if (special) cell.setBackground(cellBg(Brutal.ORANGE));
                 if (al != null && al.cover != null) {
                     icon.setText("");
-                    label.setText("▸ " + name.toUpperCase(java.util.Locale.getDefault()) + "\n" + count(al));
+                    label.setText("▸ " + name.toUpperCase(java.util.Locale.getDefault()) + "\n" + count(al)
+                            + (al.shared ? " · 👥" : ""));
                     loadThumb(img, al.cover);
                 } else {
                     icon.setText(name.toUpperCase(java.util.Locale.getDefault()));
-                    label.setText(al == null ? "▸ CARPETA" : "▸ " + count(al));
+                    label.setText(al == null ? (special ? "▸ DE OTROS" : "▸ CARPETA")
+                            : "▸ " + count(al) + (al.shared ? " · 👥" : ""));
                 }
                 check.setText(selecting ? (fsel ? "✓" : "") : "");
                 check.setBackground(selecting ? cellBg(fsel ? Brutal.ORANGE : Brutal.WHITE) : null);

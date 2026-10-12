@@ -130,7 +130,19 @@ final class Uploader {
     }
 
     private static Uri toMediaStoreUri(Uri uri) {
-        if (MediaStore.AUTHORITY.equals(uri.getAuthority())) return uri;
+        if (MediaStore.AUTHORITY.equals(uri.getAuthority())) {
+            // selector de fotos de Android: «…/picker/0/com.android.providers.media.photopicker/media/<id>»
+            java.util.List<String> seg = uri.getPathSegments();
+            if (seg.contains("picker") && seg.contains("com.android.providers.media.photopicker")) {
+                try {
+                    return ContentUris.withAppendedId(MediaStore.Files.getContentUri("external"),
+                            Long.parseLong(uri.getLastPathSegment()));
+                } catch (Exception e) {
+                    return null;
+                }
+            }
+            return uri;
+        }
         if ("com.android.providers.media.documents".equals(uri.getAuthority())) {
             try {
                 String[] parts = DocumentsContract.getDocumentId(uri).split(":");

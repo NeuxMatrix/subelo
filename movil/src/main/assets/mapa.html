@@ -41,6 +41,7 @@
   .leaflet-touch .leaflet-bar { border: 3px solid var(--ink); box-shadow: 4px 4px 0 var(--ink); border-radius: 0; }
   .leaflet-touch .leaflet-bar a:first-child, .leaflet-touch .leaflet-bar a:last-child { border-radius: 0; }
   .leaflet-control-attribution { font-size: 10px; }
+  html[data-theme=dark] .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.85) contrast(.9) saturate(.6); }
   .ph { width: 100%; height: 100%; background: var(--surface); border: 3px solid var(--ink); box-shadow: 4px 4px 0 var(--ink); overflow: hidden; position: relative; }
   .ph img { width: 100%; height: 100%; object-fit: cover; display: block; }
   .ph .n { position: absolute; right: -3px; top: -3px; background: var(--orange); color: #111; border: 3px solid var(--ink); font: 700 12px "Space Mono", monospace; padding: 1px 5px; min-width: 24px; text-align: center; }
@@ -91,9 +92,10 @@ const map = L.map('map', {zoomControl: true, worldCopyJump: true}).setView([40.2
 let tiles = null;
 function setTiles() {
   if (tiles) map.removeLayer(tiles);
-  tiles = L.tileLayer('https://{s}.basemaps.cartocdn.com/' + (dark() ? 'dark_all' : 'rastertiles/voyager') + '/{z}/{x}/{y}{r}.png', {
-    maxZoom: 19, subdomains: 'abcd',
-    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> · © <a href="https://carto.com/attributions">CARTO</a>'
+  // mapa de OpenStreetMap (sin clave); en modo oscuro se invierten los colores
+  tiles = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
   }).addTo(map);
 }
 setTiles();

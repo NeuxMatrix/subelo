@@ -64,11 +64,29 @@ final class BoxClient {
         String name;
         int media, folders;
         RemoteFile cover;
+        boolean virtual, shared;
+        String owner, mode;
     }
+
+    /** Carpeta especial con lo que el otro usuario te ha compartido (no existe en el disco). */
+    static final String SHARED_WITH_ME = "👥 Compartido conmigo";
 
     static final class Listing {
         final List<String> folders = new ArrayList<String>();
         final List<RemoteFile> files = new ArrayList<RemoteFile>();
+        /** «own» (tuya), «ver», «subir» (compartida contigo) o «virtual» (la carpeta especial). */
+        String access = "own";
+        String owner;
+        /** Con quién compartes esta carpeta: usuario → «ver» / «subir». */
+        final java.util.Map<String, String> sharedWith = new java.util.LinkedHashMap<String, String>();
+
+        boolean own() {
+            return "own".equals(access);
+        }
+
+        boolean canAdd() {
+            return own() || "subir".equals(access);
+        }
     }
 
     interface Progress {
@@ -259,6 +277,15 @@ final class BoxClient {
         Listing l = new Listing();
         JSONArray a = o.optJSONArray("folders");
         if (a != null) for (int i = 0; i < a.length(); i++) l.folders.add(a.optString(i));
+        l.access = o.optString("access", "own");
+        l.owner = o.optString("owner", null);
+        JSONObject sw = o.optJSONObject("sharedWith");
+        if (sw != null) {
+            for (java.util.Iterator<String> it = sw.keys(); it.hasNext(); ) {
+                String k = it.next();
+                l.sharedWith.put(k, sw.optString(k));
+            }
+        }
         JSONArray f = o.optJSONArray("files");
         if (f != null) {
             for (int i = 0; i < f.length(); i++) {
@@ -282,6 +309,10 @@ final class BoxClient {
             al.name = x.optString("name");
             al.media = x.optInt("media");
             al.folders = x.optInt("folders");
+            al.virtual = x.optBoolean("virtual");
+            al.shared = x.optJSONObject("sharedWith") != null && x.optJSONObject("sharedWith").length() > 0;
+            al.owner = x.optString("owner", null);
+            al.mode = x.optString("mode", null);
             JSONObject c = x.optJSONObject("cover");
             if (c != null) al.cover = new RemoteFile(c.optString("path"), c.optString("name"), c.optLong("size", -1), 0);
             out.add(al);
@@ -337,6 +368,31 @@ final class BoxClient {
         } finally {
             c.disconnect();
         }
+    }
+
+    /** Comparte una carpeta tuya con el otro usuario («ver» o «subir»). */
+    void share(String path, String with, String mode) throws IOException {
+        List<String[]> f = new ArrayList<String[]>();
+        f.add(new String[]{"path", path});
+        f.add(new String[]{"with", with});
+        f.add(new String[]{"mode", mode});
+        form("/api/share", f);
+    }
+
+    void unshare(String path, String with) throws IOException {
+        List<String[]> f = new ArrayList<String[]>();
+        f.add(new String[]{"path", path});
+        f.add(new String[]{"with", with});
+        form("/api/unshare", f);
+    }
+
+    /** Los otros usuarios del box (con quién se puede compartir). */
+    List<String> others() throws IOException {
+        JSONObject o = call("GET", "/api/shares", 30000);
+        List<String> out = new ArrayList<String>();
+        JSONArray a = o.optJSONArray("others");
+        if (a != null) for (int i = 0; i < a.length(); i++) out.add(a.optString(i));
+        return out;
     }
 
     /** JSON con las fotos que tienen ubicación (para el mapa). */

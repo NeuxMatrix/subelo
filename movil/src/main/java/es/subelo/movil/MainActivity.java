@@ -43,6 +43,7 @@ public class MainActivity extends Activity {
     private static final int REQ_MEDIA_PERMS = 3;
     private static final int REQ_NOTIF = 4;
     private static final int REQ_UPLOAD_DIR = 5;
+    private static final int REQ_LOCATION = 6;
 
     /** Fotos compartidas o elegidas esperando a que digas en qué carpeta van. */
     private ArrayList<Uri> pendingUpload;
@@ -621,7 +622,27 @@ public class MainActivity extends Activity {
     private void startUpload(ArrayList<Uri> uris) {
         if (uris.isEmpty()) return;
         pendingUpload = uris;
-        int n = uris.size();
+        // sin este permiso Android borra de las fotos dónde se hicieron (y no salen en el mapa)
+        if (Build.VERSION.SDK_INT >= 29
+                && checkSelfPermission(Manifest.permission.ACCESS_MEDIA_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            List<String> perms = new ArrayList<String>();
+            perms.add(Manifest.permission.ACCESS_MEDIA_LOCATION);
+            if (!Uploader.hasMediaPermission(this)) {
+                if (Build.VERSION.SDK_INT >= 33) {
+                    perms.add(Manifest.permission.READ_MEDIA_IMAGES);
+                    perms.add(Manifest.permission.READ_MEDIA_VIDEO);
+                } else {
+                    perms.add(Manifest.permission.READ_EXTERNAL_STORAGE);
+                }
+            }
+            requestPermissions(perms.toArray(new String[0]), REQ_LOCATION);
+            return;
+        }
+        askFolder();
+    }
+
+    private void askFolder() {
+        int n = pendingUpload.size();
         startActivityForResult(new Intent(this, FolderActivity.class)
                 .putExtra(FolderActivity.EXTRA_PICK, Prefs.dest(this))
                 .putExtra(FolderActivity.EXTRA_TITLE, n == 1 ? "¿Dónde la guardo?" : "¿Dónde guardo las " + n + "?")
@@ -694,6 +715,10 @@ public class MainActivity extends Activity {
 
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        if (requestCode == REQ_LOCATION) {
+            if (pendingUpload != null) askFolder(); // con o sin permiso, se sube igual
+            return;
+        }
         if (requestCode != REQ_MEDIA_PERMS) return;
         if (Uploader.hasMediaPermission(this)) {
             enableAuto();

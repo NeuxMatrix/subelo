@@ -359,7 +359,34 @@ final class HttpServer {
         }
         // cada usuario trabaja dentro de su carpeta: «Fer/...» o «Julss/...»
         String rel = cleanPath(params.get("path"));
-        String dirRel = rel.isEmpty() ? user : user + "/" + rel;
+        if (path.equals("/api/shares") || path.equals("/api/share") || path.equals("/api/unshare")) {
+            shares(st, method, path, user, rel, params, out);
+            return;
+        }
+        // lo compartido contigo vive bajo una carpeta especial que apunta a la del otro usuario
+        Shares.Access acc = Shares.resolve(ctx, user, rel);
+        if (acc == null) {
+            error(out, 404, "Esa carpeta ya no está compartida contigo");
+            return;
+        }
+        if (acc.virtualRoot) {
+            if (path.equals("/api/folders") || path.equals("/api/list") || path.equals("/api/albums")) {
+                virtualRoot(st, path, user, out);
+            } else {
+                error(out, 403, "Aquí solo están las carpetas que te han compartido: entra en una de ellas.");
+            }
+            return;
+        }
+        boolean reading = path.equals("/api/folders") || path.equals("/api/list") || path.equals("/api/albums")
+                || path.equals("/api/file") || path.equals("/api/thumb") || path.equals("/api/zip")
+                || path.equals("/api/exists") || path.equals("/api/places");
+        boolean adding = path.equals("/api/mkdir") || path.equals("/api/upload");
+        if (!acc.own && !reading && !(adding && acc.canAdd())) {
+            error(out, 403, adding ? "Esta carpeta es de " + acc.owner + " y solo te deja verla."
+                    : "Esta carpeta es de " + acc.owner + ": solo " + acc.owner + " puede borrar, mover o cambiar nombres.");
+            return;
+        }
+        String dirRel = acc.storeRel;
 
         if (path.equals("/api/folders")) {
             Object d = st.dir(dirRel, rel.isEmpty());
@@ -369,10 +396,12 @@ final class HttpServer {
             }
             List<String> dirs = st.listDirs(d);
             JSONArray arr = new JSONArray();
+            if (acc.own && rel.isEmpty() && !Shares.incoming(ctx, user).isEmpty()) arr.put(Shares.VIRTUAL);
             for (String n : dirs) arr.put(n);
             JSONObject o = new JSONObject();
             o.put("path", rel);
             o.put("folders", arr);
+            access(o, acc, user, rel);
             json(out, 200, o);
         } else if (path.equals("/api/mkdir")) {
             if (rel.isEmpty()) {
@@ -405,6 +434,7 @@ final class HttpServer {
                 return;
             }
             JSONArray dirs = new JSONArray();
+            if (acc.own && rel.isEmpty() && !Shares.incoming(ctx, user).isEmpty()) dirs.put(Shares.VIRTUAL);
             for (String n : st.listDirs(d)) dirs.put(n);
             JSONArray files = new JSONArray();
             for (Store.FileInfo f : st.listFiles(d)) {
@@ -418,6 +448,7 @@ final class HttpServer {
             o.put("path", rel);
             o.put("folders", dirs);
             o.put("files", files);
+            access(o, acc, user, rel);
             json(out, 200, o);
         } else if (path.equals("/api/file")) {
             download(st, dirRel, params, headers, method.equals("HEAD"), out);
@@ -439,35 +470,30 @@ final class HttpServer {
                 return;
             }
             JSONArray arr = new JSONArray();
-            for (String n : st.listDirs(d)) {
-                Object sub = st.dir(dirRel + "/" + n, false);
-                if (sub == null) continue;
-                JSONObject a = new JSONObject();
-                a.put("name", n);
-                int media = 0;
-                Store.FileInfo first = null;
-                for (Store.FileInfo f : st.listFiles(sub)) {
-                    if (!Thumbs.isImage(f.name) && !Thumbs.isVideo(f.name)) continue;
-                    media++;
-                    if (first == null) first = f;
-                }
-                a.put("media", media);
-                List<String> subs = st.listDirs(sub);
-                a.put("folders", subs.size());
-                String coverDir = rel.isEmpty() ? n : rel + "/" + n;
-                if (first == null) {
-                    String[] found = cover(st, dirRel + "/" + n, coverDir, subs, 2);
-                    if (found != null) {
-                        coverDir = found[0];
-                        first = new Store.FileInfo(found[1], Long.parseLong(found[2]), 0);
+            if (acc.own && rel.isEmpty()) {
+                List<Shares.Share> in = Shares.incoming(ctx, user);
+                if (!in.isEmpty()) {
+                    JSONObject a = new JSONObject();
+                    a.put("name", Shares.VIRTUAL);
+                    a.put("media", 0);
+                    a.put("folders", in.size());
+                    a.put("virtual", true);
+                    for (Shares.Share sh : in) {
+                        JSONObject x = album(st, sh.owner + "/" + sh.path, Shares.VIRTUAL + "/" + sh.name, sh.name);
+                        if (x != null && x.has("cover")) {
+                            a.put("cover", x.get("cover"));
+                            break;
+                        }
                     }
+                    arr.put(a);
                 }
-                if (first != null) {
-                    JSONObject c = new JSONObject();
-                    c.put("path", coverDir);
-                    c.put("name", first.name);
-                    c.put("size", first.size);
-                    a.put("cover", c);
+            }
+            for (String n : st.listDirs(d)) {
+                JSONObject a = album(st, dirRel + "/" + n, rel.isEmpty() ? n : rel + "/" + n, n);
+                if (a == null) continue;
+                if (acc.own) {
+                    Map<String, String> with = Shares.outgoing(ctx, user, rel.isEmpty() ? n : rel + "/" + n);
+                    if (!with.isEmpty()) a.put("sharedWith", new JSONObject(with));
                 }
                 arr.put(a);
             }
@@ -478,6 +504,10 @@ final class HttpServer {
         } else if (path.equals("/api/places")) {
             send(out, 200, "application/json; charset=utf-8", Places.json(ctx, st, user).getBytes(UTF8));
         } else if (path.equals("/api/delete") || path.equals("/api/move") || path.equals("/api/rename")) {
+            if (!acc.own) {
+                error(out, 403, "Solo " + acc.owner + " puede cambiar esta carpeta.");
+                return;
+            }
             if (!method.equals("POST")) {
                 error(out, 405, "Usa POST");
                 return;
@@ -502,11 +532,16 @@ final class HttpServer {
                 int ok = 0;
                 for (String n : names) {
                     st.delete(d, n);
+                    Shares.deleted(ctx, user, rel.isEmpty() ? n : rel + "/" + n);
                     ok++;
                 }
                 o.put("deleted", ok);
             } else if (path.equals("/api/move")) {
                 String to = cleanPath(params.get("to"));
+                if (Shares.isVirtual(to)) {
+                    error(out, 400, "No se puede mover a lo que te han compartido.");
+                    return;
+                }
                 for (String n : names) {
                     String moved = rel.isEmpty() ? n : rel + "/" + n;
                     if (to.equals(rel)) {
@@ -520,7 +555,11 @@ final class HttpServer {
                 }
                 Object dest = st.dir(to.isEmpty() ? user : user + "/" + to, true);
                 JSONArray arr = new JSONArray();
-                for (String n : names) arr.put(st.move(d, n, dest));
+                for (String n : names) {
+                    String fin = st.move(d, n, dest);
+                    Shares.moved(ctx, user, rel.isEmpty() ? n : rel + "/" + n, to.isEmpty() ? fin : to + "/" + fin);
+                    arr.put(fin);
+                }
                 o.put("moved", arr);
                 o.put("to", to);
             } else {
@@ -533,6 +572,7 @@ final class HttpServer {
                     error(out, 409, "Ya hay algo llamado «" + nn + "» en esta carpeta");
                     return;
                 }
+                Shares.moved(ctx, user, rel.isEmpty() ? names.get(0) : rel + "/" + names.get(0), rel.isEmpty() ? nn : rel + "/" + nn);
                 o.put("name", nn);
             }
             o.put("ok", true);
@@ -542,6 +582,131 @@ final class HttpServer {
         } else {
             error(out, 404, "No encontrado");
         }
+    }
+
+    /** Una carpeta como «álbum»: cuántas fotos tiene, subcarpetas y una portada. null si no existe. */
+    private static JSONObject album(Store st, String storeRel, String clientRel, String name) throws IOException, JSONException {
+        Object sub = st.dir(storeRel, false);
+        if (sub == null) return null;
+        JSONObject a = new JSONObject();
+        a.put("name", name);
+        int media = 0;
+        Store.FileInfo first = null;
+        for (Store.FileInfo f : st.listFiles(sub)) {
+            if (!Thumbs.isImage(f.name) && !Thumbs.isVideo(f.name)) continue;
+            media++;
+            if (first == null) first = f;
+        }
+        a.put("media", media);
+        List<String> subs = st.listDirs(sub);
+        a.put("folders", subs.size());
+        String coverDir = clientRel;
+        if (first == null) {
+            String[] found = cover(st, storeRel, clientRel, subs, 2);
+            if (found != null) {
+                coverDir = found[0];
+                first = new Store.FileInfo(found[1], Long.parseLong(found[2]), 0);
+            }
+        }
+        if (first != null) {
+            JSONObject c = new JSONObject();
+            c.put("path", coverDir);
+            c.put("name", first.name);
+            c.put("size", first.size);
+            a.put("cover", c);
+        }
+        return a;
+    }
+
+    /** Qué puede hacer el usuario en la carpeta que está viendo (para que el móvil y la web lo muestren). */
+    private void access(JSONObject o, Shares.Access acc, String user, String rel) throws JSONException {
+        o.put("access", acc.own ? "own" : acc.mode);
+        o.put("owner", acc.owner);
+        if (acc.own && !rel.isEmpty()) o.put("sharedWith", new JSONObject(Shares.outgoing(ctx, user, rel)));
+    }
+
+    /** La carpeta especial con lo que te han compartido. */
+    private void virtualRoot(Store st, String path, String user, OutputStream out) throws IOException, JSONException {
+        JSONArray folders = new JSONArray(), albums = new JSONArray();
+        for (Shares.Share sh : Shares.incoming(ctx, user)) {
+            String storeRel = sh.owner + "/" + sh.path;
+            if (path.equals("/api/albums")) {
+                JSONObject a = album(st, storeRel, Shares.VIRTUAL + "/" + sh.name, sh.name);
+                if (a == null) continue;
+                a.put("owner", sh.owner);
+                a.put("mode", sh.mode);
+                albums.put(a);
+            } else if (st.dir(storeRel, false) != null) {
+                folders.put(sh.name);
+            }
+        }
+        JSONObject o = new JSONObject();
+        o.put("path", Shares.VIRTUAL);
+        o.put("access", "virtual");
+        if (path.equals("/api/albums")) {
+            o.put("albums", albums);
+        } else {
+            o.put("folders", folders);
+            if (path.equals("/api/list")) o.put("files", new JSONArray());
+        }
+        json(out, 200, o);
+    }
+
+    /** Compartir carpetas: ver lo compartido, compartir y dejar de compartir. */
+    private void shares(Store st, String method, String path, String user, String rel, Map<String, String> params,
+                        OutputStream out) throws IOException, JSONException {
+        if (path.equals("/api/shares")) {
+            JSONArray mine = new JSONArray(), withMe = new JSONArray(), others = new JSONArray();
+            for (Shares.Share sh : Shares.outgoing(ctx, user)) {
+                JSONObject x = new JSONObject();
+                x.put("path", sh.path);
+                x.put("with", sh.guest);
+                x.put("mode", sh.mode);
+                mine.put(x);
+            }
+            for (Shares.Share sh : Shares.incoming(ctx, user)) {
+                JSONObject x = new JSONObject();
+                x.put("owner", sh.owner);
+                x.put("name", sh.name);
+                x.put("path", Shares.VIRTUAL + "/" + sh.name);
+                x.put("mode", sh.mode);
+                withMe.put(x);
+            }
+            for (String n : Users.NAMES) if (!n.equals(user)) others.put(n);
+            JSONObject o = new JSONObject();
+            o.put("mine", mine);
+            o.put("withMe", withMe);
+            o.put("others", others);
+            json(out, 200, o);
+            return;
+        }
+        if (!method.equals("POST")) {
+            error(out, 405, "Usa POST");
+            return;
+        }
+        String guest = Users.canonical(params.get("with"));
+        if (guest == null || guest.equals(user)) {
+            error(out, 400, "¿Con quién la compartes?");
+            return;
+        }
+        if (rel.isEmpty() || Shares.isVirtual(rel)) {
+            error(out, 400, rel.isEmpty() ? "Elige una carpeta concreta para compartir, no todo tu disco."
+                    : "Solo puedes compartir carpetas tuyas.");
+            return;
+        }
+        if (path.equals("/api/share")) {
+            if (st.dir(user + "/" + rel, false) == null) {
+                error(out, 404, "La carpeta no existe");
+                return;
+            }
+            Shares.set(ctx, user, rel, guest, params.get("mode"));
+        } else {
+            Shares.remove(ctx, user, rel, guest);
+        }
+        JSONObject o = new JSONObject();
+        o.put("ok", true);
+        o.put("sharedWith", new JSONObject(Shares.outgoing(ctx, user, rel)));
+        json(out, 200, o);
     }
 
     /** Portada de una carpeta sin fotos sueltas: la primera foto de sus subcarpetas (año → mes). */
