@@ -403,7 +403,18 @@ final class BoxClient {
     // ---------- Echo: el box sube la carpeta «Echo» a un álbum de Amazon Photos ----------
 
     JSONObject amazon() throws IOException {
-        return call("GET", "/api/amazon", 15000);
+        return newFeature("/api/amazon");
+    }
+
+    /** Estado de algo que el box tiene desde hace poco: un 404 quiere decir que el box no está actualizado. */
+    private JSONObject newFeature(String path) throws IOException {
+        try {
+            return call("GET", path, 15000);
+        } catch (BoxException e) {
+            if (e.code != 404) throw e;
+            throw new BoxException(404, "El box tiene una versión antigua. En la tele abre «Súbelo Servidor», "
+                    + "pulsa «Buscar actualizaciones» y acepta la instalación.");
+        }
     }
 
     /** Pasa al box la sesión de Amazon (cookies de amazon.es); devuelve el estado y los álbumes. */
@@ -450,7 +461,7 @@ final class BoxClient {
     // ---------- traer de Google Fotos: el box descarga lo que se elige en el selector de Google ----------
 
     JSONObject google() throws IOException {
-        return call("GET", "/api/google", 15000);
+        return newFeature("/api/google");
     }
 
     JSONObject googleSetup(String clientId, String secret) throws IOException {
