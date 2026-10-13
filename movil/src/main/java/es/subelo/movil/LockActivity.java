@@ -8,7 +8,6 @@ import android.hardware.biometrics.BiometricPrompt;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.CancellationSignal;
-import android.text.InputType;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
@@ -50,10 +49,7 @@ public class LockActivity extends Activity {
                 ? "Pon tu huella o escribe tu contraseña de Súbelo para entrar."
                 : "Escribe tu contraseña de Súbelo para entrar.");
         card.addView(msg);
-        pw = new EditText(this);
-        pw.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
-        pw.setHint("Contraseña");
-        pw.setSingleLine(true);
+        pw = Brutal.password(this, "Contraseña");
         pw.setTextColor(Brutal.INK);
         pw.setHintTextColor(0xFF8A8580);
         pw.setImeOptions(EditorInfo.IME_ACTION_DONE);

@@ -754,15 +754,11 @@ public class MainActivity extends Activity {
         LinearLayout form = new LinearLayout(this);
         form.setOrientation(LinearLayout.VERTICAL);
         form.setPadding(dp(20), dp(8), dp(20), 0);
-        final EditText pw = new EditText(this);
-        pw.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
-        pw.setHint("Contraseña de Súbelo");
-        pw.setSingleLine(true);
+        final EditText pw = Brutal.password(this, "Contraseña de Súbelo");
         form.addView(pw);
         final AlertDialog d = new AlertDialog.Builder(this)
                 .setTitle("Proteger Súbelo")
-                .setMessage("Escribe tu contraseña de Súbelo (la de entrar como " + Prefs.user(this) + "). "
-                        + "Lo compruebo con el box, así que tienes que estar en el Wi-Fi de casa.")
+                .setMessage("Escribe tu contraseña de Súbelo (la de entrar como " + Prefs.user(this) + ").")
                 .setView(form)
                 .setPositiveButton("Activar", null)
                 .setNegativeButton("Cancelar", null)
@@ -801,6 +797,7 @@ public class MainActivity extends Activity {
             @Override
             public void run() {
                 String err = null;
+                boolean offline = false;
                 try {
                     BoxClient bc = BoxClient.connect(MainActivity.this);
                     JSONObject r = bc.login(user, password);
@@ -815,26 +812,74 @@ public class MainActivity extends Activity {
                 } catch (BoxClient.BoxException e) {
                     err = e.code == 401 || e.code == 403 ? "Contraseña incorrecta." : e.getMessage();
                 } catch (IOException e) {
-                    err = "No encuentro el box: conéctate al Wi-Fi de casa y vuelve a intentarlo.\n(" + e.getMessage() + ")";
+                    offline = true; // fuera de casa o box apagado: se confirma escribiéndola dos veces
                 }
                 final String error = err;
+                final boolean noBox = offline;
                 runOnUiThread(new Runnable() {
                     @Override
                     public void run() {
-                        if (error != null) {
+                        if (noBox) {
+                            confirmLockOffline(password);
+                        } else if (error != null) {
                             setLockSwitch(false);
                             alert("✖ " + error);
-                            return;
+                        } else {
+                            lockOn(password);
                         }
-                        AppLock.enable(MainActivity.this, password);
-                        lockBio.setEnabled(AppLock.biometricPossible(MainActivity.this));
-                        alert("🔒 Listo. Desde ahora Súbelo pide "
-                                + (AppLock.useBiometric(MainActivity.this) ? "tu huella o tu contraseña" : "tu contraseña")
-                                + " al abrirlo.");
                     }
                 });
             }
         });
+    }
+
+    /** Sin box no se puede comprobar: se pide otra vez para no activarlo con una errata. */
+    private void confirmLockOffline(final String password) {
+        LinearLayout form = new LinearLayout(this);
+        form.setOrientation(LinearLayout.VERTICAL);
+        form.setPadding(dp(20), dp(8), dp(20), 0);
+        final EditText pw = Brutal.password(this, "Repítela");
+        form.addView(pw);
+        final AlertDialog d = new AlertDialog.Builder(this)
+                .setTitle("Repite la contraseña")
+                .setMessage("Ahora no encuentro el box para comprobarla, así que escríbela otra vez.")
+                .setView(form)
+                .setPositiveButton("Activar", null)
+                .setNegativeButton("Cancelar", null)
+                .setCancelable(false)
+                .create();
+        d.setOnShowListener(new DialogInterface.OnShowListener() {
+            @Override
+            public void onShow(DialogInterface di) {
+                d.getButton(AlertDialog.BUTTON_NEGATIVE).setOnClickListener(new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        d.dismiss();
+                        setLockSwitch(false);
+                    }
+                });
+                d.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        if (!password.equals(pw.getText().toString())) {
+                            pw.setText("");
+                            pw.setError("No coincide");
+                            return;
+                        }
+                        d.dismiss();
+                        lockOn(password);
+                    }
+                });
+            }
+        });
+        d.show();
+    }
+
+    private void lockOn(String password) {
+        AppLock.enable(this, password);
+        lockBio.setEnabled(AppLock.biometricPossible(this));
+        alert("🔒 Listo. Desde ahora Súbelo pide "
+                + (AppLock.useBiometric(this) ? "tu huella o tu contraseña" : "tu contraseña") + " al abrirlo.");
     }
 
     private void setLockSwitch(boolean on) {

@@ -274,6 +274,19 @@ final class Brutal {
         return t;
     }
 
+    /**
+     * Campo de contraseña que se ve con puntos. Ojo: setSingleLine() después de setInputType()
+     * quita los puntos y deja la contraseña a la vista, por eso va primero.
+     */
+    static android.widget.EditText password(Context c, String hint) {
+        android.widget.EditText et = new android.widget.EditText(c);
+        et.setSingleLine(true);
+        et.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        et.setTransformationMethod(android.text.method.PasswordTransformationMethod.getInstance());
+        et.setHint(hint);
+        return et;
+    }
+
     static TextView mono(Context c, float sp, int color) {
         TextView t = new TextView(c);
         t.setTypeface(mono(c));

@@ -244,11 +244,7 @@ public class LoginActivity extends Activity {
     }
 
     private EditText password(String hint) {
-        EditText et = new EditText(this);
-        et.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
-        et.setHint(hint);
-        et.setSingleLine(true);
-        return et;
+        return Brutal.password(this, hint);
     }
 
     private void login(final BoxClient bc, final String user, final String password) {
