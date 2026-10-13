@@ -111,8 +111,10 @@
   #vbody { display: flex; align-items: center; justify-content: center; }
   #viewer img, #viewer video { max-width: calc(100vw - 16px); max-height: calc(100vh - 96px); border: 3px solid var(--paper); margin-top: 30px; }
   #viewer img { cursor: zoom-in; }
-  #viewer.zoom #vbody { position: absolute; top: 58px; left: 0; right: 0; bottom: 0; overflow: auto; display: block; text-align: center; }
-  #viewer.zoom img { max-width: none; max-height: none; margin: 0; cursor: zoom-out; }
+  #viewer.zoom #vbody { position: absolute; top: 58px; left: 0; right: 0; bottom: 0; overflow: auto; display: flex; justify-content: flex-start; align-items: flex-start; }
+  #viewer.zoom img { max-width: none; max-height: none; margin: auto; flex: none; cursor: grab; }
+  #viewer.zoom.drag img { cursor: grabbing; }
+  #viewer .vtop #vlock { flex: none; min-width: 0; background: var(--lilac); color: var(--ink); border: 2px solid var(--paper); padding: 6px 9px; font-size: .7rem; }
   #viewer:fullscreen img, #viewer:fullscreen video { max-height: calc(100vh - 70px); }
   #viewer .vtop { position: absolute; top: 0; left: 0; right: 0; display: flex; gap: 8px; align-items: center; padding: 10px 14px; background: var(--black); border-bottom: 3px solid var(--paper); flex-wrap: wrap; }
   #viewer .vtop span { flex: 1; min-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--paper); font-size: .8rem; }
@@ -399,6 +401,7 @@
 <div id="viewer">
   <div class="vtop">
     <span id="vname" class="mono"></span>
+    <span id="vlock" class="mono" hidden></span>
     <button id="vfav" title="Favorito">☆</button>
     <button id="vdl" class="main">⬇</button>
     <button id="vecho" class="alt">📺 Al Echo</button>
@@ -563,7 +566,7 @@ async function logout(why) {
   $('grid').innerHTML = ''; closeViewer();
   showLogin(why);
 }
-$('logout').onclick = () => logout();
+$('logout').onclick = () => { history.replaceState(null, '', '/'); logout(); }; // el siguiente empieza en su carpeta principal
 // sin usar la web un rato: fuera (el box también lo hace por su cuenta)
 let lastUse = Date.now();
 ['pointerdown', 'keydown', 'wheel', 'touchstart'].forEach(ev => addEventListener(ev, () => { lastUse = Date.now(); }, {passive: true}));
@@ -671,7 +674,7 @@ function applyAccess() {
   const who = Object.keys(sharedWith);
   const note = access === 'virtual' ? '👥 Lo que te han compartido'
     : access === 'fav' ? '⭐ Aquí no hay copias: cada foto sigue en su carpeta. Quitarla de favoritos no la borra.'
-    : !own ? 'De ' + owner + (access === 'subir' ? ' · puedes ver y añadir fotos' : ' · solo ver')
+    : !own ? 'De ' + owner + (access === 'subir' ? ' · puedes ver y añadir fotos' : ' · solo ver') + ' · borrar, mover y renombrar solo ' + owner
     : who.length ? '👥 Compartida con ' + who.map(w => w + (sharedWith[w] === 'subir' ? ' (ver y añadir)' : ' (ver)')).join(', ') : '';
   $('accessNote').textContent = note; $('accessNote').hidden = !note;
 }
@@ -988,11 +991,19 @@ function openViewer(i) {
   $('vecho').hidden = !isImg(f.name);
   $('vgeo').hidden = !canGeo([f.name]);
   $('vren').hidden = $('vmv').hidden = $('vdel').hidden = !own;
-  const b = $('vbody'); b.innerHTML = '';
+  // lo de otro: se ve, pero solo su dueño lo borra (y en Favoritos, ☆ lo quita sin borrar)
+  const lock = access === 'ver' || access === 'subir' ? '🔒 De ' + owner + ': solo ' + owner + ' puede borrarla'
+    : access === 'fav' ? (f.own ? '⭐ Para borrarla, ábrela en su carpeta' : '🔒 De otro: solo su dueño puede borrarla') : '';
+  $('vlock').textContent = lock; $('vlock').hidden = !lock;
+  const b = $('vbody'); b.innerHTML = ''; b.style.top = ''; vz = 1;
   const el = document.createElement(isVid(f.name) ? 'video' : 'img');
   if (isVid(f.name)) { el.controls = true; el.autoplay = true; }
   el.src = fileUrl(f.name, false);
-  if (!isVid(f.name)) el.onclick = e => zoom(e, el);
+  if (!isVid(f.name)) {
+    el.draggable = false;
+    el.title = 'Rueda del ratón o clic: zoom · arrastra para moverte';
+    el.onclick = e => { if (dragged) { dragged = false; return; } zoomTo(el, vz > 1 ? 1 : 2.5, e.clientX, e.clientY); };
+  }
   b.appendChild(el);
   $('viewer').style.display = 'flex';
 }
@@ -1000,16 +1011,51 @@ function closeViewer() {
   $('vbody').innerHTML = ''; $('viewer').style.display = 'none'; vi = -1;
   if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
 }
-// clic en la foto: a lo ancho de la pantalla (las verticales) o a su tamaño real; otro clic, entera
-function zoom(e, img) {
+// zoom: rueda del ratón (o + y -) acerca y aleja donde está el ratón; clic, 2,5 veces o vuelta a entera;
+// con zoom, arrastrar mueve la foto
+let vz = 1, fitW = 0, drag = null, dragged = false;
+function zoomTo(img, z, cx, cy) {
   const v = $('viewer'), b = $('vbody');
-  if (v.classList.toggle('zoom')) {
-    const r = img.getBoundingClientRect(), fx = (e.clientX - r.left) / r.width, fy = (e.clientY - r.top) / r.height;
-    const tall = img.naturalWidth / img.naturalHeight < innerWidth / innerHeight;
-    img.style.width = (tall ? b.clientWidth : Math.max(img.naturalWidth, b.clientWidth)) + 'px';
-    b.scrollLeft = fx * img.offsetWidth - b.clientWidth / 2; b.scrollTop = fy * img.offsetHeight - b.clientHeight / 2;
-  } else img.style.width = '';
+  if (!img.naturalWidth) return;
+  const zoomed = v.classList.contains('zoom');
+  if (!zoomed && z <= 1) return;
+  const r = img.getBoundingClientRect(), fx = (cx - r.left) / r.width, fy = (cy - r.top) / r.height;
+  if (!zoomed) {
+    fitW = img.clientWidth;
+    b.style.top = v.querySelector('.vtop').offsetHeight + 'px';
+    v.classList.add('zoom');
+  }
+  z = Math.min(z, Math.max(3, 2 * img.naturalWidth / fitW)); // hasta el doble de su tamaño real
+  if (z <= 1.02) { v.classList.remove('zoom'); img.style.width = ''; b.style.top = ''; vz = 1; return; }
+  vz = z;
+  img.style.width = Math.round(fitW * z) + 'px';
+  const n = img.getBoundingClientRect(); // que el punto del ratón se quede debajo del ratón
+  b.scrollLeft += n.left + fx * n.width - cx;
+  b.scrollTop += n.top + fy * n.height - cy;
 }
+$('viewer').addEventListener('wheel', e => {
+  const img = $('vbody').querySelector('img');
+  if (!img || vi < 0 || e.target.closest('.vtop')) return;
+  e.preventDefault();
+  const d = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaMode === 2 ? e.deltaY * 400 : e.deltaY;
+  zoomTo(img, vz * Math.exp(-Math.max(-300, Math.min(300, d)) * 0.002), e.clientX, e.clientY);
+}, {passive: false});
+$('vbody').addEventListener('mousedown', e => {
+  if (!$('viewer').classList.contains('zoom') || e.button !== 0) return;
+  const b = $('vbody');
+  drag = {x: e.clientX, y: e.clientY, l: b.scrollLeft, t: b.scrollTop, moved: false};
+  e.preventDefault();
+});
+addEventListener('mousemove', e => {
+  if (!drag) return;
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+  if (!drag.moved && Math.abs(dx) + Math.abs(dy) > 4) { drag.moved = true; $('viewer').classList.add('drag'); }
+  if (drag.moved) { $('vbody').scrollLeft = drag.l - dx; $('vbody').scrollTop = drag.t - dy; }
+});
+addEventListener('mouseup', () => {
+  if (!drag) return;
+  dragged = drag.moved; drag = null; $('viewer').classList.remove('drag');
+});
 $('vfull').onclick = () => {
   if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
   else if ($('viewer').requestFullscreen) $('viewer').requestFullscreen().catch(() => toast('El navegador no deja pantalla completa'));
@@ -1053,6 +1099,7 @@ $('viewer').addEventListener('touchstart', e => { touchX = e.touches[0].clientX;
 $('viewer').addEventListener('touchend', e => {
   if (touchX === null) return;
   const dx = e.changedTouches[0].clientX - touchX; touchX = null;
+  if ($('viewer').classList.contains('zoom')) return;
   if (Math.abs(dx) > 60) step(dx < 0 ? 1 : -1);
 });
 document.addEventListener('keydown', e => {
@@ -1060,9 +1107,14 @@ document.addEventListener('keydown', e => {
     if (geoJob) { geoClose(); return; }
     ['pick', 'shareBox', 'albumBox'].forEach(m => modal(m, false)); if (vi >= 0) closeViewer(); else if (selecting()) clearSel();
   }
-  if (vi < 0) return;
+  if (vi < 0 || geoJob) return;
   if (e.key === 'ArrowLeft') step(-1);
   if (e.key === 'ArrowRight') step(1);
+  const img = $('vbody').querySelector('img');
+  if (img && ['+', '=', '-', '0'].includes(e.key)) {
+    const b = $('vbody').getBoundingClientRect(), cx = b.left + b.width / 2, cy = b.top + b.height / 2;
+    zoomTo(img, e.key === '0' ? 1 : e.key === '-' ? vz / 1.4 : vz * 1.4, cx, cy);
+  }
 });
 
 // ---------- subidas ----------
