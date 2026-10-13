@@ -8,6 +8,7 @@ import android.content.ClipData;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
 import android.net.Uri;
 import android.os.Build;
 import android.widget.Toast;
@@ -15,6 +16,7 @@ import android.widget.Toast;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -140,9 +142,13 @@ final class Echo {
         }, "subelo-echo").start();
     }
 
-    /** Abre Amazon Photos con las fotos; si no está, el menú normal de compartir. */
-    static void share(Activity a, ArrayList<Uri> uris) {
-        Intent i;
+    /**
+     * Abre Amazon Photos con las fotos. Busca entre las apps que reciben fotos compartidas la de
+     * Amazon Photos (o, si cambia de nombre, otra de Amazon con «Photos»); si no está, explica qué
+     * ve y abre el menú normal de compartir.
+     */
+    static void share(final Activity a, ArrayList<Uri> uris) {
+        final Intent i;
         if (uris.size() == 1) {
             i = new Intent(Intent.ACTION_SEND).putExtra(Intent.EXTRA_STREAM, uris.get(0));
         } else {
@@ -156,17 +162,65 @@ final class Echo {
         }
         i.setClipData(cd);
         i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-        try {
-            a.startActivity(new Intent(i).setPackage(AMAZON_PHOTOS));
-            return;
-        } catch (ActivityNotFoundException | SecurityException ignored) {
-            // Amazon Photos no está instalada
+
+        PackageManager pm = a.getPackageManager();
+        List<ResolveInfo> targets = pm.queryIntentActivities(i, PackageManager.MATCH_DEFAULT_ONLY);
+        ResolveInfo best = null;
+        StringBuilder amazon = new StringBuilder();
+        for (ResolveInfo r : targets) {
+            String pkg = r.activityInfo.packageName;
+            String label = String.valueOf(r.loadLabel(pm));
+            String l = (pkg + " " + label).toLowerCase(Locale.ROOT);
+            if (!l.contains("amazon")) continue;
+            if (amazon.length() > 0) amazon.append(", ");
+            amazon.append(label);
+            if (pkg.equals(AMAZON_PHOTOS)) best = r;
+            else if (best == null && (l.contains("photo") || l.contains("foto"))) best = r;
         }
-        Toast.makeText(a, "No encuentro Amazon Photos: elige con qué enviarlas", Toast.LENGTH_LONG).show();
-        try {
-            a.startActivity(Intent.createChooser(i, "Enviar al Echo con…"));
-        } catch (ActivityNotFoundException e) {
-            Toast.makeText(a, "No hay ninguna app para compartir fotos", Toast.LENGTH_LONG).show();
+        if (best != null) {
+            try {
+                a.startActivity(new Intent(i).setClassName(best.activityInfo.packageName, best.activityInfo.name));
+                return;
+            } catch (ActivityNotFoundException | SecurityException ignored) {
+                // no se dejó abrir: se explica abajo
+            }
         }
+        boolean singleOnly = false; // ¿la acepta de una en una pero no varias a la vez?
+        if (best == null && uris.size() > 1) {
+            Intent one = new Intent(Intent.ACTION_SEND).putExtra(Intent.EXTRA_STREAM, uris.get(0)).setType("image/*");
+            for (ResolveInfo r : pm.queryIntentActivities(one, PackageManager.MATCH_DEFAULT_ONLY)) {
+                if (r.activityInfo.packageName.equals(AMAZON_PHOTOS)) singleOnly = true;
+            }
+        }
+        boolean installed;
+        try {
+            pm.getPackageInfo(AMAZON_PHOTOS, 0);
+            installed = true;
+        } catch (PackageManager.NameNotFoundException e) {
+            installed = false;
+        }
+        String msg = singleOnly
+                ? "Amazon Photos solo acepta las fotos de una en una: elige una sola foto y vuelve a enviarla."
+                : installed
+                ? "Amazon Photos está instalada, pero no aparece entre las apps que reciben fotos compartidas."
+                : "No veo la app Amazon Photos en este móvil.";
+        msg += "\n\nApps de Amazon que reciben fotos: " + (amazon.length() > 0 ? amazon : "ninguna") + "."
+                + "\n\nPulsa «Ver apps» y busca Amazon Photos en la lista. Las fotos ya están en la galería, "
+                + "en Subelo › Echo, por si prefieres subirlas desde Amazon Photos.";
+        new AlertDialog.Builder(a)
+                .setTitle("No encuentro Amazon Photos")
+                .setMessage(msg)
+                .setPositiveButton("Ver apps", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface d, int w) {
+                        try {
+                            a.startActivity(Intent.createChooser(i, "Enviar al Echo con…"));
+                        } catch (ActivityNotFoundException e) {
+                            Toast.makeText(a, "No hay ninguna app para compartir fotos", Toast.LENGTH_LONG).show();
+                        }
+                    }
+                })
+                .setNegativeButton("Cerrar", null)
+                .show();
     }
 }
