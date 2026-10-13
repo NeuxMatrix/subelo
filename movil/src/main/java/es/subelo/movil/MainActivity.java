@@ -53,7 +53,8 @@ public class MainActivity extends Activity {
     private TextView boxText, destText, statusText, autoText, updateText;
     private LinearLayout updateCard;
     private Updater.Release update;
-    private Switch autoSwitch;
+    private Switch autoSwitch, lockSwitch;
+    private CheckBox lockBio;
     private Button cancelButton;
     private boolean ignoreSwitch;
 
@@ -307,6 +308,46 @@ public class MainActivity extends Activity {
         auto.addView(autoText);
         col.addView(auto, Brutal.cardParams(this));
         Brutal.foldable(this, auto, "auto", 1);
+
+        // 04 · seguridad
+        LinearLayout lock = Brutal.card(this, "04 // seguridad", Brutal.LILAC);
+        lockSwitch = new Switch(this);
+        lockSwitch.setText("Pedir huella o contraseña al abrir Súbelo");
+        Brutal.style(lockSwitch);
+        lockSwitch.setThumbTintList(autoSwitch.getThumbTintList());
+        lockSwitch.setTrackTintList(autoSwitch.getTrackTintList());
+        lockSwitch.setChecked(AppLock.enabled(this));
+        lockSwitch.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton b, boolean on) {
+                if (ignoreSwitch) return;
+                if (on) askLockPassword();
+                else {
+                    AppLock.disable(MainActivity.this);
+                    lockBio.setEnabled(false);
+                    Toast.makeText(MainActivity.this, "Súbelo ya no pide contraseña al abrir", Toast.LENGTH_SHORT).show();
+                }
+            }
+        });
+        lock.addView(lockSwitch);
+        boolean bio = AppLock.biometricPossible(this);
+        lockBio = check(bio ? "Con huella (si no, solo contraseña)" : "Con huella (este móvil no tiene ninguna configurada)",
+                bio && AppLock.useBiometric(this));
+        lockBio.setEnabled(bio && AppLock.enabled(this));
+        lockBio.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton b, boolean on) {
+                AppLock.setUseBiometric(MainActivity.this, on);
+            }
+        });
+        lock.addView(lockBio);
+        TextView lockText = Brutal.mono(this, 11, Brutal.INK);
+        lockText.setText("LA CONTRASEÑA ES LA DE SÚBELO (LA DE ENTRAR COMO " + Prefs.user(this).toUpperCase(Locale.getDefault())
+                + "). SE VUELVE A PEDIR SI SALES DE LA APP MÁS DE 1 MINUTO.");
+        lockText.setPadding(0, dp(6), 0, 0);
+        lock.addView(lockText);
+        col.addView(lock, Brutal.cardParams(this));
+        Brutal.foldable(this, lock, "seguridad", 1);
 
         TextView foot = Brutal.mono(this, 11, Brutal.INK);
         foot.setText("SÚBELO " + Updater.installedName(this) + " · CONEXIÓN CIFRADA 🔒");
@@ -705,6 +746,101 @@ public class MainActivity extends Activity {
         Prefs.setAuto(this, true);
         AutoUploadJob.schedule(this);
         if (scanNow) UploadService.scan(this);
+    }
+
+    // ---------- bloqueo con huella o contraseña ----------
+
+    private void askLockPassword() {
+        LinearLayout form = new LinearLayout(this);
+        form.setOrientation(LinearLayout.VERTICAL);
+        form.setPadding(dp(20), dp(8), dp(20), 0);
+        final EditText pw = new EditText(this);
+        pw.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        pw.setHint("Contraseña de Súbelo");
+        pw.setSingleLine(true);
+        form.addView(pw);
+        final AlertDialog d = new AlertDialog.Builder(this)
+                .setTitle("Proteger Súbelo")
+                .setMessage("Escribe tu contraseña de Súbelo (la de entrar como " + Prefs.user(this) + "). "
+                        + "Lo compruebo con el box, así que tienes que estar en el Wi-Fi de casa.")
+                .setView(form)
+                .setPositiveButton("Activar", null)
+                .setNegativeButton("Cancelar", null)
+                .setCancelable(false)
+                .create();
+        d.setOnShowListener(new DialogInterface.OnShowListener() {
+            @Override
+            public void onShow(DialogInterface di) {
+                d.getButton(AlertDialog.BUTTON_NEGATIVE).setOnClickListener(new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        d.dismiss();
+                        setLockSwitch(false);
+                    }
+                });
+                d.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        String p = pw.getText().toString();
+                        if (p.isEmpty()) {
+                            pw.setError("Escríbela");
+                            return;
+                        }
+                        d.dismiss();
+                        verifyAndLock(p);
+                    }
+                });
+            }
+        });
+        d.show();
+    }
+
+    private void verifyAndLock(final String password) {
+        final String user = Prefs.user(this);
+        bg.execute(new Runnable() {
+            @Override
+            public void run() {
+                String err = null;
+                try {
+                    BoxClient bc = BoxClient.connect(MainActivity.this);
+                    JSONObject r = bc.login(user, password);
+                    String token = r.optString("token");
+                    if (!token.isEmpty()) {
+                        try {
+                            bc.logout(); // la sesión de antes; nos quedamos con la nueva
+                        } catch (IOException ignored) {
+                        }
+                        Prefs.setLogin(MainActivity.this, r.optString("user", user), token);
+                    }
+                } catch (BoxClient.BoxException e) {
+                    err = e.code == 401 || e.code == 403 ? "Contraseña incorrecta." : e.getMessage();
+                } catch (IOException e) {
+                    err = "No encuentro el box: conéctate al Wi-Fi de casa y vuelve a intentarlo.\n(" + e.getMessage() + ")";
+                }
+                final String error = err;
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (error != null) {
+                            setLockSwitch(false);
+                            alert("✖ " + error);
+                            return;
+                        }
+                        AppLock.enable(MainActivity.this, password);
+                        lockBio.setEnabled(AppLock.biometricPossible(MainActivity.this));
+                        alert("🔒 Listo. Desde ahora Súbelo pide "
+                                + (AppLock.useBiometric(MainActivity.this) ? "tu huella o tu contraseña" : "tu contraseña")
+                                + " al abrirlo.");
+                    }
+                });
+            }
+        });
+    }
+
+    private void setLockSwitch(boolean on) {
+        ignoreSwitch = true;
+        lockSwitch.setChecked(on);
+        ignoreSwitch = false;
     }
 
     private void setSwitch(boolean on) {

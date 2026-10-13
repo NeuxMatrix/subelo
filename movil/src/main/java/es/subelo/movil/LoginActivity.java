@@ -263,6 +263,7 @@ public class LoginActivity extends Activity {
                         Prefs.setCertFp(LoginActivity.this, bc.fingerprint());
                     }
                     Prefs.setLogin(LoginActivity.this, r.optString("user", user), r.optString("token"));
+                    AppLock.loggedIn(LoginActivity.this, password);
                 } catch (IOException e) {
                     err = e.getMessage();
                 }
