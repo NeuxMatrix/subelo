@@ -212,9 +212,15 @@ public class AlbumsActivity extends Activity {
         return out;
     }
 
+    /** Fotos y vídeos, sin lo descargado desde el box (Subelo, Subelo/Echo…). */
     private static String mediaSelection() {
-        return MediaStore.Files.FileColumns.MEDIA_TYPE + "=" + MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE
-                + " OR " + MediaStore.Files.FileColumns.MEDIA_TYPE + "=" + MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO;
+        return "(" + MediaStore.Files.FileColumns.MEDIA_TYPE + "=" + MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE
+                + " OR " + MediaStore.Files.FileColumns.MEDIA_TYPE + "=" + MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO
+                + ") AND (" + pathCol() + " IS NULL OR " + pathCol() + " NOT LIKE '%/" + Downloader.FOLDER + "/%')";
+    }
+
+    private static String pathCol() {
+        return Build.VERSION.SDK_INT >= 29 ? MediaStore.MediaColumns.RELATIVE_PATH : "_data";
     }
 
     private static Uri uri(long id, int type) {

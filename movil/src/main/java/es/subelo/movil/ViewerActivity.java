@@ -42,6 +42,7 @@ public class ViewerActivity extends Activity {
     private BoxClient bc;
     private FrameLayout stage;
     private TextView title, message;
+    private Button echo;
     private GestureDetector gestures;
     private VideoProxy proxy;
 
@@ -120,22 +121,29 @@ public class ViewerActivity extends Activity {
         LinearLayout nav = new LinearLayout(this);
         nav.setBackgroundColor(Brutal.BLACK);
         nav.setPadding(dp(10), dp(4), dp(4), dp(4));
-        Button prev = Brutal.button(this, "‹ Anterior", Brutal.PAPER, Brutal.BLACK, null);
+        Button prev = Brutal.button(this, "‹", Brutal.PAPER, Brutal.BLACK, null);
         prev.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 step(-1);
             }
         });
-        Button next = Brutal.button(this, "Siguiente ›", Brutal.PURPLE, Brutal.SNOW, null);
+        Button next = Brutal.button(this, "›", Brutal.PURPLE, Brutal.SNOW, null);
         next.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 step(1);
             }
         });
-        nav.addView(prev, Brutal.half(this));
-        nav.addView(next, Brutal.half(this));
+        echo = Brutal.button(this, "📺 Al Echo", Brutal.ORANGE, Brutal.BLACK, new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (!files.isEmpty()) Echo.send(ViewerActivity.this, Collections.singletonList(files.get(index)));
+            }
+        });
+        nav.addView(prev, Brutal.spaced(this, dp(72), -2, 0));
+        nav.addView(echo, Brutal.half(this));
+        nav.addView(next, Brutal.spaced(this, dp(72), -2, 0));
         root.addView(nav, new FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM));
 
         gestures = new GestureDetector(this, new GestureDetector.SimpleOnGestureListener() {
@@ -158,6 +166,11 @@ public class ViewerActivity extends Activity {
     public boolean dispatchTouchEvent(MotionEvent ev) {
         if (gestures != null && !(stage.getChildAt(0) instanceof VideoView)) gestures.onTouchEvent(ev);
         return super.dispatchTouchEvent(ev);
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] results) {
+        Echo.onPermission(this, requestCode, results);
     }
 
     @Override
@@ -258,6 +271,7 @@ public class ViewerActivity extends Activity {
     private void show() {
         final BoxClient.RemoteFile f = files.get(index);
         title.setText((index + 1) + "/" + files.size() + "  " + f.name);
+        echo.setVisibility(Downloader.isImage(f.name) ? View.VISIBLE : View.INVISIBLE);
         stage.removeAllViews();
         message.setText("");
         if (bc == null) {

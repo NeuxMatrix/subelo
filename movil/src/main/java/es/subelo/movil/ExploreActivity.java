@@ -64,7 +64,8 @@ public class ExploreActivity extends Activity {
     private String path = "";
     private BoxClient bc;
     private TextView pathText;
-    private Button downloadButton, uploadButton, folderButton, moveButton, deleteButton, renameButton, shareButton;
+    private Button downloadButton, uploadButton, folderButton, moveButton, deleteButton, renameButton, shareButton, echoButton;
+    private LinearLayout echoRow;
     private BoxClient.Listing current = new BoxClient.Listing();
     private Adapter adapter;
     private List<BoxClient.RemoteFile> pendingDownload;
@@ -112,10 +113,8 @@ public class ExploreActivity extends Activity {
             @Override
             public boolean onItemLongClick(AdapterView<?> parent, View view, int pos, long id) {
                 Object e = entries.get(pos);
-                if (!current.own() || BoxClient.SHARED_WITH_ME.equals(e) && path.isEmpty()) {
-                    Toast.makeText(ExploreActivity.this, current.owner != null && !current.own()
-                            ? "Esto es de " + current.owner + ": solo puede borrarlo o moverlo " + current.owner
-                            : "Aquí está lo que te han compartido", Toast.LENGTH_SHORT).show();
+                if ("virtual".equals(current.access) || BoxClient.SHARED_WITH_ME.equals(e) && path.isEmpty()) {
+                    Toast.makeText(ExploreActivity.this, "Aquí está lo que te han compartido", Toast.LENGTH_SHORT).show();
                     return true;
                 }
                 selecting = true;
@@ -124,6 +123,18 @@ public class ExploreActivity extends Activity {
             }
         });
         col.addView(grid, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
+
+        echoRow = new LinearLayout(this);
+        echoRow.setBackgroundColor(Brutal.BLACK);
+        echoRow.setPadding(dp(10), dp(6), dp(4), 0);
+        echoButton = Brutal.button(this, "📺 Enviar al Echo", Brutal.ORANGE, Brutal.BLACK, new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                Echo.send(ExploreActivity.this, selectedFiles());
+            }
+        });
+        echoRow.addView(echoButton, Brutal.half(this));
+        col.addView(echoRow);
 
         LinearLayout bar = new LinearLayout(this);
         bar.setBackgroundColor(Brutal.BLACK);
@@ -298,22 +309,29 @@ public class ExploreActivity extends Activity {
         }
         if (selecting) {
             pathText.setText(where + "\n■ " + selected.size() + " ELEGIDOS · TOCA PARA AÑADIR · ATRÁS PARA SALIR");
-            int nFiles = selectedFiles().size();
+            int nFiles = selectedFiles().size(), nPhotos = 0;
+            for (BoxClient.RemoteFile f : selectedFiles()) if (Downloader.isImage(f.name)) nPhotos++;
             downloadButton.setText("⬇ " + nFiles);
             downloadButton.setVisibility(nFiles > 0 ? View.VISIBLE : View.GONE);
+            echoButton.setText(("📺 Enviar " + (nPhotos == 1 ? "1 foto" : nPhotos + " fotos") + " al Echo").toUpperCase(java.util.Locale.getDefault()));
+            echoRow.setVisibility(nPhotos > 0 ? View.VISIBLE : View.GONE);
         } else {
             pathText.setText(where + "\n" + files.size() + " ARCHIVOS"
-                    + (current.own() ? " · MANTÉN PULSADO PARA BORRAR O MOVER" : ""));
+                    + ("virtual".equals(current.access) ? ""
+                    : current.own() ? " · MANTÉN PULSADO PARA BORRAR, MOVER O ENVIAR AL ECHO"
+                    : " · MANTÉN PULSADO PARA DESCARGAR O ENVIAR AL ECHO"));
             downloadButton.setText("⬇ TODO");
             downloadButton.setVisibility(View.VISIBLE);
+            echoRow.setVisibility(View.GONE);
         }
         boolean add = !selecting && current.canAdd();
         uploadButton.setVisibility(add ? View.VISIBLE : View.GONE);
         folderButton.setVisibility(add ? View.VISIBLE : View.GONE);
         shareButton.setVisibility(!selecting && current.own() && !path.isEmpty() ? View.VISIBLE : View.GONE);
-        moveButton.setVisibility(selecting ? View.VISIBLE : View.GONE);
-        deleteButton.setVisibility(selecting ? View.VISIBLE : View.GONE);
-        renameButton.setVisibility(selecting && selected.size() == 1 ? View.VISIBLE : View.GONE);
+        boolean edit = selecting && current.own();
+        moveButton.setVisibility(edit ? View.VISIBLE : View.GONE);
+        deleteButton.setVisibility(edit ? View.VISIBLE : View.GONE);
+        renameButton.setVisibility(edit && selected.size() == 1 ? View.VISIBLE : View.GONE);
         adapter.notifyDataSetChanged();
     }
 
@@ -423,6 +441,7 @@ public class ExploreActivity extends Activity {
 
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] results) {
+        if (Echo.onPermission(this, requestCode, results)) return;
         if (requestCode == REQ_WRITE && pendingDownload != null) {
             List<BoxClient.RemoteFile> l = pendingDownload;
             pendingDownload = null;
