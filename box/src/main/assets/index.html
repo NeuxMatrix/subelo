@@ -399,7 +399,7 @@
     <div class="tag">💻 // como app en el ordenador</div>
     <div class="big" id="aApp">Para usar Súbelo como una app de Windows, sin el aviso de «La conexión no es privada», instala una vez el certificado del box:</div>
     <ol class="steps">
-      <li><a class="btn main" href="/subelo-certificado.crt" download>⬇ Descargar el certificado</a></li>
+      <li><a class="btn main" id="aCertDl" href="/subelo-certificado.crt" download="Subelo-certificado.crt">⬇ Descargar el certificado</a></li>
       <li>Ábrelo (doble clic) y pulsa «Instalar certificado…» › «Usuario actual» › «Siguiente».</li>
       <li>Elige «Colocar todos los certificados en el siguiente almacén» › «Examinar…» › <b>«Entidades de certificación raíz de confianza»</b> › «Aceptar» › «Siguiente» › «Finalizar».</li>
       <li>Windows pregunta «¿Desea instalar este certificado?» y enseña una «Huella digital (sha1)». Comprueba que es <b class="mono" id="aThumb">…</b> (la tele enseña los 8 primeros) y pulsa «Sí».</li>
@@ -597,6 +597,24 @@ async function logout(why) {
   $('grid').innerHTML = ''; closeViewer();
   showLogin(why);
 }
+// Chrome no deja descargar archivos de una web cuyo certificado aún no es de confianza (y este es justo el
+// que lo arregla): da «Comprueba la conexión a Internet». Así que se pide como las demás llamadas de la web,
+// que sí van, y se guarda desde el navegador, sin otra conexión.
+$('aCertDl').onclick = async ev => {
+  ev.preventDefault();
+  try {
+    const r = await fetch('/subelo-certificado.crt', {cache: 'no-store'});
+    if (!r.ok) throw new Error('Error ' + r.status);
+    const url = URL.createObjectURL(new Blob([await r.arrayBuffer()], {type: 'application/x-x509-ca-cert'}));
+    const a = document.createElement('a');
+    a.href = url; a.download = 'Subelo-certificado.crt';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    toast('⬇ Descargado «Subelo-certificado.crt»: ábrelo desde las descargas del navegador.');
+  } catch (e) {
+    toast('✖ No se pudo descargar el certificado: ' + e.message);
+  }
+};
 $('info').onclick = () => { if (user && $('info').classList.contains('go')) location.hash = '#ajustes'; }; // lo que ocupa cada uno
 $('logout').onclick = () => { history.replaceState(null, '', '/'); logout(); }; // el siguiente empieza en su carpeta principal
 // sin usar la web un rato: fuera (el box también lo hace por su cuenta)
