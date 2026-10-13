@@ -175,7 +175,7 @@
   .modal .list .up { background: var(--lilac); }
   .modal .row { display: flex; gap: 10px; flex-wrap: wrap; padding: 14px 16px 16px; }
   .modal .pad { padding: 0 16px; }
-  #shareBox .box, #backupBox .box { padding: 16px; gap: 12px; }
+  #shareBox .box, #backupBox .box, #askPwBox .box { padding: 16px; gap: 12px; }
   #shareBox h3, #backupBox h3 { padding: 0 0 4px; }
   #toast { position: fixed; left: 16px; bottom: 16px; z-index: 50; background: var(--black); color: var(--paper); border: 3px solid var(--paper); box-shadow: 6px 6px 0 var(--orange); padding: 12px 14px; max-width: min(460px, calc(100vw - 32px)); display: none; white-space: pre-line; }
 
@@ -471,6 +471,7 @@
   <p id="backupText" style="margin:0;line-height:1.4"></p>
   <button id="backupOn" class="main">☁ Hacer backup en Amazon</button>
   <button id="backupOff" class="danger">✕ Dejar de hacer copia</button>
+  <button id="backupTrust"></button>
   <button id="backupNo">Cerrar</button>
 </div></div>
 
@@ -479,6 +480,13 @@
   <div id="pickPath" class="sub mono"></div>
   <div id="pickList" class="list"></div>
   <div class="row"><button id="pickOk" class="main">✓ Mover aquí</button><button id="pickMk">+ Carpeta</button><button id="pickNo">Cancelar</button></div>
+</div></div>
+
+<div id="askPwBox" class="modal"><div class="box">
+  <h3 id="askPwTitle">Tu contraseña de Súbelo</h3>
+  <input type="password" id="askPwInput" autocomplete="current-password" placeholder="Contraseña">
+  <button id="askPwOk" class="main">Seguir</button>
+  <button id="askPwNo">Cancelar</button>
 </div></div>
 
 <div id="albumBox" class="modal"><div class="box">
@@ -962,14 +970,26 @@ $('backup').onclick = async () => {
   try { j = await api('/api/backup'); } catch (e) { fail(e); return; }
   const name = path.split('/').pop();
   $('backupTitle').textContent = '☁ «' + name + '» en Amazon Fotos';
-  let txt, on = false, off = false;
+  let txt, on = false, off = false, trust = false;
   const f = (j.folders || []).find(x => path === x.path || path.startsWith(x.path + '/'));
   const prog = f && f.files !== undefined ? (f.missing ? 'La carpeta ya no está en el disco.' : f.done + ' de ' + f.files + ' archivos ya en Amazon' + (f.path !== path ? ' (con la carpeta «' + f.path + '»)' : '') + '.') : f ? 'Preparando la copia…' : '';
-  const err = j.error ? '\n✖ ' + j.error : '';
-  if (!j.connected || j.expired) {
+  const err = (j.error ? '\n✖ ' + j.error : '') + (j.hideError ? '\n✖ ' + j.hideError : '');
+  if (j.connected && j.sameAs && j.sameBefore) {
+    txt = '🔒 ' + j.sameAs + ' entró en Súbelo con tu misma cuenta de Amazon, así que sabe entrar en ella y vería tus copias (Amazon Fotos no tiene perfiles). Por eso no se hacen.\n\nSi la cuenta es tuya, cámbiale la contraseña en Amazon (y cierra la sesión en todos los dispositivos) y pulsa «' + j.sameAs + ' ya no puede entrar». Si no es tuya, entra con tu propia cuenta desde la app del móvil.';
+    trust = true;
+    $('backupTrust').textContent = j.sameAs + ' ya no puede entrar';
+    $('backupTrust').onclick = async () => {
+      if (!confirm('¿Seguro que ' + j.sameAs + ' ya no sabe la contraseña de esta cuenta de Amazon? Si la sabe, vería todas tus copias.')) return;
+      const pw = await askSubeloPassword('Tu contraseña de Súbelo');
+      if (pw === null) return;
+      try { await post('/api/amazon/trust', [['password', pw]]); modal('backupBox', false); toast('☁ Vuelven las copias en Amazon'); load(); } catch (e) { fail(e); }
+    };
+  } else if (j.connected && j.sameAs) {
+    txt = '🔒 Tu Súbelo y el de ' + j.sameAs + ' están conectados a la misma cuenta de Amazon. Amazon Fotos no tiene perfiles: con una sola cuenta cada uno vería las fotos del otro, así que no se hacen copias.\n\nPara hacerlas, cada uno tiene que entrar con su propia cuenta de Amazon (en el móvil: ☁ en la carpeta › «Entrar con otra cuenta»). Para que las dos cuentas tengan fotos ilimitadas, quien tenga Prime puede invitar a la otra a su «Archivo familiar» desde Amazon Fotos; dejad apagado «añadir subidas al Archivo familiar».\n\nLo que ya se copió sigue en esa cuenta, en «' + j.amazonFolder + '»: bórralo allí si no quieres que ' + j.sameAs + ' lo vea.';
+  } else if (!j.connected || j.expired) {
     txt = (j.expired ? 'La sesión de Amazon ha caducado.' : 'Súbelo aún no está conectado con tu Amazon.') + ' Entra en Amazon desde la app del móvil (☁ en la carpeta, o «📺 Fotos al Echo») y vuelve aquí.';
   } else if (!backupMode) {
-    txt = 'Se sube una copia de esta carpeta, con todo lo que tenga dentro, a «Súbelo Backup» de tu Amazon Fotos. Lo que añadas después también se copia. No va a ningún álbum, así que no sale en el Echo. Si se rompe el disco, ahí lo tienes; y fuera de casa lo ves en la app, en «☁ Copias en Amazon».';
+    txt = 'Se sube una copia de esta carpeta, con todo lo que tenga dentro, a «Súbelo Backup» de tu Amazon Fotos. Lo que añadas después también se copia. Las fotos se suben ocultas y fuera de los álbumes, para que no salgan en el Echo ni en los recuerdos. Si se rompe el disco, ahí lo tienes; y fuera de casa lo ves en la app, en «☁ Copias en Amazon».';
     on = true;
   } else if (backupMode === 'inside') {
     txt = '✓ Ya tiene copia en Amazon: está dentro de otra carpeta que la tiene. ' + prog + err;
@@ -978,7 +998,7 @@ $('backup').onclick = async () => {
     off = true;
   }
   $('backupText').textContent = txt; $('backupText').style.whiteSpace = 'pre-line';
-  $('backupOn').hidden = !on; $('backupOff').hidden = !off;
+  $('backupOn').hidden = !on; $('backupOff').hidden = !off; $('backupTrust').hidden = !trust;
   modal('backupBox', true);
 };
 async function doBackup(add) {
@@ -1209,6 +1229,7 @@ $('viewer').addEventListener('touchend', e => {
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     if (geoJob) { geoClose(); return; }
+    if ($('askPwNo').onclick) $('askPwNo').onclick(); // contesta «cancelar» a quien la pidió
     ['pick', 'shareBox', 'backupBox', 'albumBox'].forEach(m => modal(m, false)); if (vi >= 0) closeViewer(); else if (selecting()) clearSel();
   }
   if (vi < 0 || geoJob) return;
@@ -1337,9 +1358,22 @@ async function echoLoad() {
 }
 $('echoSync').onclick = async () => { try { await post('/api/amazon/sync', []); toast('↻ Repasando la carpeta Echo…'); echoLoad(); } catch (e) { fail(e); } };
 $('echoOpen').onclick = () => go('Echo');
+// pide la contraseña de Súbelo (para cambiar o quitar la cuenta de Amazon); null si cancela
+function askSubeloPassword(title) {
+  return new Promise(resolve => {
+    $('askPwTitle').textContent = title; $('askPwInput').value = '';
+    const done = v => { modal('askPwBox', false); $('askPwOk').onclick = $('askPwNo').onclick = $('askPwInput').onkeydown = null; resolve(v); };
+    $('askPwOk').onclick = () => { if ($('askPwInput').value) done($('askPwInput').value); };
+    $('askPwNo').onclick = () => done(null);
+    $('askPwInput').onkeydown = e => { if (e.key === 'Enter' && $('askPwInput').value) done($('askPwInput').value); };
+    modal('askPwBox', true); $('askPwInput').focus();
+  });
+}
 $('echoOff').onclick = async () => {
-  if (!confirm('¿Desconectar Amazon Photos? El box olvida tu sesión de Amazon y deja de enviar fotos. Lo que ya está en el álbum se queda.')) return;
-  try { await post('/api/amazon/disconnect', []); echoLoad(); } catch (e) { fail(e); }
+  if (!confirm('¿Desconectar Amazon? El box olvida tu sesión de Amazon: deja de enviar fotos al Echo y de hacer tus copias en Amazon. Lo que ya está en Amazon se queda.')) return;
+  const pw = await askSubeloPassword('Tu contraseña de Súbelo, para desconectar Amazon');
+  if (pw === null) return;
+  try { await post('/api/amazon/disconnect', [['password', pw]]); echoLoad(); } catch (e) { fail(e); }
 };
 $('echoAlbum').onclick = async () => {
   $('albumList').innerHTML = ''; $('albumSub').textContent = 'Buscando tus álbumes…'; $('albumLink').value = '';

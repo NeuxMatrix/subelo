@@ -271,13 +271,16 @@ public class MainActivity extends Activity {
     private void confirmReset(final String user) {
         new android.app.AlertDialog.Builder(this)
                 .setTitle("¿Borrar la contraseña de " + user + "?")
-                .setMessage("Se cerrará su sesión en el móvil y en el ordenador. La próxima vez que " + user
-                        + " entre, pondrá una contraseña nueva. Sus fotos no se tocan.")
+                .setMessage("Se cerrará su sesión en el móvil y en el ordenador, y se desconectará su Amazon. "
+                        + "La próxima vez que " + user + " entre, pondrá una contraseña nueva y tendrá que volver a "
+                        + "entrar en Amazon. Sus fotos no se tocan.")
                 .setPositiveButton("Borrar", new android.content.DialogInterface.OnClickListener() {
                     @Override
                     public void onClick(android.content.DialogInterface d, int w) {
                         try {
                             Users.reset(MainActivity.this, user);
+                            // quien ponga la contraseña nueva no hereda su Amazon (Echo y copias)
+                            EchoSync.forgetSession(MainActivity.this, user);
                         } catch (java.io.IOException e) {
                             ServerService.error = "No se pudo borrar la contraseña: " + e.getMessage();
                         }

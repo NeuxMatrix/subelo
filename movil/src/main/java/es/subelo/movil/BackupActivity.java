@@ -9,7 +9,9 @@ import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
+import android.os.SystemClock;
 import android.text.TextUtils;
 import android.util.LruCache;
 import android.util.TypedValue;
@@ -45,6 +47,8 @@ import java.util.concurrent.Executors;
  */
 public class BackupActivity extends Activity {
     private static final int REQ_LOGIN = 1;
+    /** Tiempo que se perdona fuera al ir a ver un vídeo o a entrar en Amazon. */
+    private static final long AWAY_MS = 10 * 60 * 1000L;
 
     private final ExecutorService bg = Executors.newSingleThreadExecutor();
     private final ExecutorService thumbs = Executors.newFixedThreadPool(3);
@@ -66,6 +70,13 @@ public class BackupActivity extends Activity {
     private AmazonDrive drive;
     private boolean unlocked;
     private int loadSeq;
+    /** El usuario de Súbelo que abrió esta pantalla: si cambia, se cierra. */
+    private String openedFor;
+    /** La contraseña ya comprobada, solo en memoria mientras está abierta (para no pedirla otra vez al entrar en Amazon). */
+    private String password;
+    private AlertDialog passwordDialog;
+    private boolean expectReturn;
+    private long stoppedAt;
 
     // visor
     private FrameLayout viewer;
@@ -77,6 +88,10 @@ public class BackupActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         Brutal.apply(this);
         super.onCreate(savedInstanceState);
+        openedFor = Prefs.user(this);
+        // que la lista de apps recientes no enseñe las fotos
+        if (Build.VERSION.SDK_INT >= 33) setRecentsScreenshotEnabled(false);
+        else getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE);
         root = new FrameLayout(this);
         LinearLayout col = new LinearLayout(this);
         col.setOrientation(LinearLayout.VERTICAL);
@@ -92,6 +107,8 @@ public class BackupActivity extends Activity {
         loginButton = Brutal.button(this, "Entrar en Amazon", Brutal.ORANGE, Brutal.BLACK, new View.OnClickListener() {
             @Override
             public void onClick(View v) {
+                AmazonActivity.handoff = password;
+                expectReturn = true;
                 startActivityForResult(new Intent(BackupActivity.this, AmazonActivity.class)
                         .putExtra(AmazonActivity.EXTRA_ONLY_LOGIN, true), REQ_LOGIN);
             }
@@ -129,7 +146,58 @@ public class BackupActivity extends Activity {
     }
 
     @Override
+    protected void onResume() {
+        super.onResume();
+        expectReturn = false;
+        // otro usuario ha entrado en Súbelo en este móvil: estas copias no son suyas
+        if (openedFor == null || !openedFor.equals(Prefs.user(this))) {
+            lock();
+            finish();
+        }
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        if (!isChangingConfigurations()) stoppedAt = SystemClock.elapsedRealtime();
+    }
+
+    @Override
+    protected void onRestart() {
+        super.onRestart();
+        if (stoppedAt == 0) return;
+        long away = SystemClock.elapsedRealtime() - stoppedAt;
+        stoppedAt = 0;
+        // al salir de esta pantalla y volver se pide la contraseña otra vez
+        // (salvo un rato si se ha ido a ver un vídeo o a entrar en Amazon)
+        if (unlocked && (!expectReturn || away > AWAY_MS)) {
+            lock();
+            askPassword();
+        }
+    }
+
+    /** Lo olvida todo hasta que se vuelva a escribir la contraseña. */
+    private void lock() {
+        unlocked = false;
+        password = null;
+        AmazonActivity.handoff = null;
+        loadSeq++;
+        if (viewer != null) closeViewer();
+        drive = null;
+        stack.clear();
+        entries.clear();
+        media.clear();
+        cache.evictAll();
+        adapter.notifyDataSetChanged();
+        infoText.setText("");
+        loginButton.setVisibility(View.GONE);
+        pathText.setText("☁ COPIAS EN AMAZON");
+    }
+
+    @Override
     protected void onDestroy() {
+        password = null;
+        if (passwordDialog != null) passwordDialog.dismiss();
         bg.shutdownNow();
         thumbs.shutdownNow();
         super.onDestroy();
@@ -158,6 +226,7 @@ public class BackupActivity extends Activity {
     // ---------- contraseña ----------
 
     private void askPassword() {
+        if (passwordDialog != null && passwordDialog.isShowing()) return;
         LinearLayout form = new LinearLayout(this);
         form.setOrientation(LinearLayout.VERTICAL);
         form.setPadding(dp(20), dp(8), dp(20), 0);
@@ -189,6 +258,7 @@ public class BackupActivity extends Activity {
                 });
             }
         });
+        passwordDialog = d;
         d.show();
     }
 
@@ -201,7 +271,8 @@ public class BackupActivity extends Activity {
         if (AmazonSession.hasPassword(this)) {
             if (AmazonSession.check(this, password)) {
                 d.dismiss();
-                unlocked();
+                unlocked(password);
+                revalidate(password);
             } else {
                 pw.setText("");
                 pw.setError("Contraseña incorrecta");
@@ -215,16 +286,7 @@ public class BackupActivity extends Activity {
             public void run() {
                 String err = null;
                 try {
-                    BoxClient bc = BoxClient.connect(BackupActivity.this);
-                    JSONObject r = bc.login(Prefs.user(BackupActivity.this), password);
-                    String token = r.optString("token");
-                    if (!token.isEmpty()) {
-                        try {
-                            bc.logout(); // la sesión de antes; nos quedamos con la nueva
-                        } catch (IOException ignored) {
-                        }
-                        Prefs.setLogin(BackupActivity.this, r.optString("user", Prefs.user(BackupActivity.this)), token);
-                    }
+                    BoxClient.connect(BackupActivity.this).checkPassword(Prefs.user(BackupActivity.this), password);
                     AmazonSession.rememberPassword(BackupActivity.this, password);
                 } catch (BoxClient.BoxException e) {
                     err = e.code == 401 || e.code == 403 ? "Contraseña incorrecta" : e.getMessage();
@@ -243,16 +305,76 @@ public class BackupActivity extends Activity {
                             return;
                         }
                         d.dismiss();
-                        unlocked();
+                        unlocked(password);
                     }
                 });
             }
         });
     }
 
-    private void unlocked() {
+    private void unlocked(String password) {
         unlocked = true;
+        this.password = password;
         start();
+    }
+
+    /**
+     * Comprobada sin el box: si estamos en casa, se confirma también con el box. Si la contraseña ha
+     * cambiado (o se ha borrado desde la tele), la de antes deja de servir aquí.
+     */
+    private void revalidate(final String password) {
+        final String user = Prefs.user(this);
+        if (user == null) return;
+        bg.execute(new Runnable() {
+            @Override
+            public void run() {
+                BoxClient bc;
+                try {
+                    bc = BoxClient.connect(BackupActivity.this);
+                } catch (BoxClient.BoxException e) {
+                    if (e.code == 401) revoked(); // el box ha cerrado la sesión de este móvil
+                    return;
+                } catch (IOException e) {
+                    return; // fuera de casa: vale con la comprobación del móvil
+                }
+                try {
+                    bc.checkPassword(user, password);
+                } catch (BoxClient.BoxException e) {
+                    if (e.code == 401 || e.code == 403) changed();
+                } catch (IOException ignored) {
+                }
+            }
+        });
+    }
+
+    /** Desde otro hilo: la contraseña escrita ya no es la buena. */
+    private void changed() {
+        AmazonSession.forgetPassword(this);
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                if (isFinishing()) return;
+                lock();
+                Toast.makeText(BackupActivity.this, "Tu contraseña de Súbelo ha cambiado: escribe la nueva",
+                        Toast.LENGTH_LONG).show();
+                askPassword();
+            }
+        });
+    }
+
+    /** Desde otro hilo: el box ya no reconoce este móvil (contraseña borrada o cambiada en la tele). */
+    private void revoked() {
+        AmazonSession.forgetPassword(this);
+        AmazonSession.clear(this);
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                if (isFinishing()) return;
+                lock();
+                Toast.makeText(BackupActivity.this, "Tu sesión de Súbelo se ha cerrado: vuelve a entrar", Toast.LENGTH_LONG).show();
+                finish();
+            }
+        });
     }
 
     // ---------- Amazon ----------
@@ -269,7 +391,7 @@ public class BackupActivity extends Activity {
             loginButton.setVisibility(View.VISIBLE);
             return;
         }
-        drive = new AmazonDrive(cookie, AmazonSession.tld(this));
+        final AmazonDrive d = drive = new AmazonDrive(cookie, AmazonSession.tld(this));
         loginButton.setVisibility(View.GONE);
         infoText.setText("Buscando tus copias…");
         final int seq = ++loadSeq;
@@ -281,7 +403,7 @@ public class BackupActivity extends Activity {
                 String err = null;
                 boolean expired = false;
                 try {
-                    top = drive.userFolder(user);
+                    top = d.userFolder(user);
                 } catch (AmazonDrive.AmazonException e) {
                     err = e.getMessage();
                     expired = e.code == 401;
@@ -316,6 +438,8 @@ public class BackupActivity extends Activity {
     }
 
     private void load() {
+        final AmazonDrive d = drive;
+        if (d == null || stack.isEmpty()) return;
         final AmazonDrive.Node dir = stack.get(stack.size() - 1);
         StringBuilder where = new StringBuilder("☁ AMAZON:/" + Prefs.user(this));
         for (int i = 1; i < stack.size(); i++) where.append("/").append(stack.get(i).name);
@@ -332,7 +456,7 @@ public class BackupActivity extends Activity {
                 List<AmazonDrive.Node> list = null;
                 String err = null;
                 try {
-                    list = drive.children(dir.id);
+                    list = d.children(dir.id);
                 } catch (IOException e) {
                     err = e.getMessage();
                 }
@@ -363,6 +487,7 @@ public class BackupActivity extends Activity {
     }
 
     private void open(AmazonDrive.Node n) {
+        if (drive == null) return;
         if (n.isVideo()) {
             String link = drive.videoLink(n);
             if (link == null) {
@@ -370,8 +495,10 @@ public class BackupActivity extends Activity {
                 return;
             }
             try {
+                expectReturn = true;
                 startActivity(new Intent(Intent.ACTION_VIEW).setDataAndType(Uri.parse(link), "video/*"));
             } catch (ActivityNotFoundException e) {
+                expectReturn = false;
                 Toast.makeText(this, "No hay reproductor de vídeo", Toast.LENGTH_SHORT).show();
             }
             return;
@@ -384,6 +511,8 @@ public class BackupActivity extends Activity {
     }
 
     private void loadThumb(final ImageView img, final AmazonDrive.Node n, final int px) {
+        final AmazonDrive d = drive;
+        if (d == null) return;
         final String key = n.id + "@" + px;
         img.setTag(key);
         Bitmap b = cache.get(key);
@@ -397,7 +526,7 @@ public class BackupActivity extends Activity {
                 if (!key.equals(img.getTag())) return; // la celda ya enseña otra cosa
                 final Bitmap bm;
                 try {
-                    bm = drive.image(n, px);
+                    bm = d.image(n, px);
                 } catch (IOException | OutOfMemoryError e) {
                     return;
                 }

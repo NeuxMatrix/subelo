@@ -713,6 +713,35 @@ public class ExploreActivity extends Activity {
                 .show();
     }
 
+    /** «Julss ya no puede entrar»: con la contraseña de Súbelo, el box vuelve a copiar en esta cuenta de Amazon. */
+    private void trustAmazon(final String other) {
+        LinearLayout form = new LinearLayout(this);
+        form.setOrientation(LinearLayout.VERTICAL);
+        form.setPadding(dp(20), dp(8), dp(20), 0);
+        final EditText pw = Brutal.password(this, "Contraseña de " + Prefs.user(this));
+        form.addView(pw);
+        new AlertDialog.Builder(this)
+                .setTitle(other + " ya no puede entrar")
+                .setMessage("¿Seguro que " + other + " ya no sabe la contraseña de esta cuenta de Amazon? Si la sabe, "
+                        + "vería todas tus copias.\n\nEscribe tu contraseña de Súbelo para seguir.")
+                .setView(form)
+                .setPositiveButton("Sí, hacer copias", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface d, int w) {
+                        final String p = pw.getText().toString();
+                        if (p.isEmpty()) return;
+                        run("☁ Vuelven las copias en Amazon", new Op() {
+                            @Override
+                            public void go(BoxClient c) throws IOException {
+                                c.amazonTrust(p);
+                            }
+                        });
+                    }
+                })
+                .setNegativeButton("Cancelar", null)
+                .show();
+    }
+
     interface Op {
         void go(BoxClient c) throws IOException;
     }
@@ -847,13 +876,56 @@ public class ExploreActivity extends Activity {
                     .show();
             return;
         }
+        final String me = Prefs.user(this);
+        if (!status.isNull("sameAs") && status.optBoolean("sameBefore")) {
+            final String other = status.optString("sameAs");
+            b.setMessage("🔒 " + other + " entró en Súbelo con tu misma cuenta de Amazon, así que sabe entrar en ella y "
+                    + "vería tus copias (Amazon Fotos no tiene perfiles). Por eso no se hacen.\n\n"
+                    + "Si la cuenta es tuya, cámbiale la contraseña en Amazon (y cierra la sesión en todos los "
+                    + "dispositivos) y pulsa «" + other + " ya no puede entrar». Si no es tuya, entra con tu propia cuenta.")
+                    .setPositiveButton(other + " ya no puede entrar", new DialogInterface.OnClickListener() {
+                        @Override
+                        public void onClick(DialogInterface d, int w) {
+                            trustAmazon(other);
+                        }
+                    })
+                    .setNeutralButton("Entrar con otra cuenta", new DialogInterface.OnClickListener() {
+                        @Override
+                        public void onClick(DialogInterface d, int w) {
+                            startActivity(new Intent(ExploreActivity.this, AmazonActivity.class));
+                        }
+                    })
+                    .setNegativeButton("Cerrar", null)
+                    .show();
+            return;
+        }
+        if (!status.isNull("sameAs")) {
+            String other = status.optString("sameAs");
+            b.setMessage("🔒 Tu Súbelo y el de " + other + " están conectados a la misma cuenta de Amazon. Amazon Fotos no "
+                    + "tiene perfiles: con una sola cuenta, cada uno vería las fotos del otro, así que no se hacen copias.\n\n"
+                    + "Para hacerlas, cada uno tiene que entrar con su propia cuenta de Amazon. " + other + " o tú: "
+                    + "«Entrar con otra cuenta» (o «📺 Fotos al Echo») y entrar con la propia. Para que las dos cuentas "
+                    + "tengan fotos ilimitadas, quien tenga Prime puede invitar a la otra a su «Archivo familiar» desde "
+                    + "Amazon Fotos; dejad apagado «añadir subidas al Archivo familiar».\n\nLo que ya se copió sigue en esa cuenta, en "
+                    + "«Súbelo Backup/" + me + "»: bórralo allí si no quieres que " + other + " lo vea.")
+                    .setPositiveButton("Entrar con otra cuenta", new DialogInterface.OnClickListener() {
+                        @Override
+                        public void onClick(DialogInterface d, int w) {
+                            startActivity(new Intent(ExploreActivity.this, AmazonActivity.class));
+                        }
+                    })
+                    .setNegativeButton("Cerrar", null)
+                    .show();
+            return;
+        }
         String progress = BackupActivity.describe(status, folder);
         String err = status.isNull("error") ? null : status.optString("error", null);
+        if (!status.isNull("hideError")) err = (err == null ? "" : err + "\n") + status.optString("hideError");
         if (mode == null) {
             b.setMessage("Se sube una copia de esta carpeta, con todo lo que tenga dentro, a «Súbelo Backup» de tu "
-                    + "Amazon Fotos. Lo que añadas después también se copia. No se mete en ningún álbum, así que no "
-                    + "sale en el Echo.\n\nSi algún día se rompe el disco, ahí lo tienes. Y fuera de casa lo puedes ver "
-                    + "en «☁ Copias en Amazon».")
+                    + "Amazon Fotos. Lo que añadas después también se copia. Las fotos se suben ocultas y fuera de los "
+                    + "álbumes, para que no salgan en el Echo ni en los recuerdos.\n\nSi algún día se rompe el disco, "
+                    + "ahí lo tienes. Y fuera de casa lo puedes ver en «☁ Copias en Amazon».")
                     .setPositiveButton("Hacer backup en Amazon", new DialogInterface.OnClickListener() {
                         @Override
                         public void onClick(DialogInterface d, int w) {

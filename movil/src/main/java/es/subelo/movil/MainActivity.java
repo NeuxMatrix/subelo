@@ -640,7 +640,6 @@ public class MainActivity extends Activity {
             }
         });
         Prefs.logout(this);
-        AmazonSession.clear(this); // la sesión de Amazon de este usuario no se queda para el siguiente
         goLogin(null);
     }
 

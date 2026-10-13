@@ -58,8 +58,33 @@ final class EchoSync {
     private static final Set<String> KICKED = new HashSet<String>();
     private static final Object WAKE = new Object();
     private static Thread worker;
+    /** Sesiones ya descifradas, {cookieEnc, cookie} por usuario: el almacén seguro es lento. */
+    private static final Map<String, String[]> OPENED = new HashMap<String, String[]>();
+    /** Cuántas veces se ha conectado o desconectado Amazon (por usuario, y en total). */
+    private static final Map<String, Integer> GEN = new HashMap<String, Integer>();
+    private static int genAll;
+    private static boolean seeded;
+
+    /** La cuenta de Amazon ha cambiado a mitad de un repaso: se deja y el siguiente empieza con la nueva. */
+    static final class AccountChanged extends IOException {
+        AccountChanged() {
+            super("La cuenta de Amazon ha cambiado");
+        }
+    }
 
     private EchoSync() {}
+
+    /** Cambia cada vez que se conecta o se quita una cuenta de Amazon: de ese usuario, o con null de cualquiera. */
+    static synchronized int gen(String user) {
+        if (user == null) return genAll;
+        Integer g = GEN.get(user);
+        return g == null ? 0 : g;
+    }
+
+    private static synchronized void bump(String user) {
+        GEN.put(user, gen(user) + 1);
+        genAll++;
+    }
 
     // ---------- ajustes por usuario ----------
 
@@ -71,7 +96,13 @@ final class EchoSync {
         return new File(c.getFilesDir(), "echo-" + user + ".txt");
     }
 
-    static synchronized Properties config(Context c, String user) {
+    /** Las cuentas de Amazon que ha usado cada usuario (no se borra al desconectar). */
+    private static File historyFile(Context c) {
+        return new File(c.getFilesDir(), "amazon-cuentas.txt");
+    }
+
+    /** Los ajustes tal cual están en el archivo, sin descifrar la sesión. */
+    private static synchronized Properties raw(Context c, String user) {
         Properties p = new Properties();
         File f = configFile(c, user);
         if (f.isFile()) {
@@ -88,11 +119,52 @@ final class EchoSync {
         return p;
     }
 
+    /** ¿Hay una sesión guardada (aunque no se pueda descifrar)? */
+    private static boolean hasSession(Properties raw) {
+        return raw.getProperty("cookie") != null || raw.getProperty("cookieEnc") != null;
+    }
+
+    static synchronized Properties config(Context c, String user) {
+        Properties p = raw(c, user);
+        String enc = p.getProperty("cookieEnc");
+        if (enc != null) {
+            // la sesión va cifrada con la llave del box; si no se puede abrir, toca volver a entrar
+            String[] known = OPENED.get(user);
+            String cookie = known != null && known[0].equals(enc) ? known[1] : Secret.open(p.getProperty("cookieIv"), enc);
+            p.remove("cookieEnc");
+            p.remove("cookieIv");
+            if (cookie != null) {
+                p.setProperty("cookie", cookie);
+                OPENED.put(user, new String[]{enc, cookie});
+            } else {
+                p.setProperty("unreadable", "1");
+            }
+        } else if (p.getProperty("cookie") != null && Secret.works()) {
+            try {
+                save(c, user, p); // de las versiones de antes: se cifra ya
+            } catch (IOException ignored) {
+            }
+        }
+        return p;
+    }
+
     private static synchronized void save(Context c, String user, Properties p) throws IOException {
         File f = configFile(c, user), tmp = new File(f.getPath() + ".tmp");
+        Properties disk = new Properties();
+        disk.putAll(p);
+        disk.remove("unreadable");
+        String cookie = p.getProperty("cookie");
+        if (cookie != null) {
+            String[] sealed = Secret.works() ? Secret.seal(cookie) : null;
+            if (sealed != null) {
+                disk.remove("cookie");
+                disk.setProperty("cookieIv", sealed[0]);
+                disk.setProperty("cookieEnc", sealed[1]);
+            }
+        }
         FileOutputStream out = new FileOutputStream(tmp);
         try {
-            p.store(out, null);
+            disk.store(out, null);
             out.getFD().sync();
         } finally {
             out.close();
@@ -110,27 +182,203 @@ final class EchoSync {
             throw new IOException("Falta la sesión de Amazon: entra otra vez desde el móvil");
         }
         Amazon a = new Amazon(cookie, tld);
-        String root = a.rootId();
-        Properties p = config(c, user);
-        p.setProperty("cookie", cookie);
-        p.setProperty("tld", tld);
-        p.setProperty("root", root);
-        p.remove("expired");
-        save(c, user, p);
+        String[] root = a.root();
+        synchronized (EchoSync.class) {
+            Properties p = config(c, user);
+            String oldRoot = p.getProperty("root");
+            if (oldRoot != null && !oldRoot.equals(root[0])) {
+                // otra cuenta de Amazon: el álbum y la carpeta de la anterior no valen aquí
+                p.remove("album");
+                p.remove("albumName");
+                p.remove("folder");
+                stateFile(c, user).delete();
+            }
+            p.setProperty("cookie", cookie);
+            p.setProperty("tld", tld);
+            p.setProperty("root", root[0]);
+            if (root[1] != null) p.setProperty("owner", root[1]);
+            else p.remove("owner");
+            p.remove("expired");
+            save(c, user, p);
+            bump(user); // lo que esté subiendo con la sesión de antes, que pare
+            seed(c);
+            remember(c, user, root);
+            // si otro dijo «ya no puede entrar» de esta cuenta, ya no vale: acaba de entrar
+            for (String other : Users.NAMES) {
+                if (other.equals(user)) continue;
+                Properties q = raw(c, other);
+                if (root[0].equals(q.getProperty("trusted"))) {
+                    q.remove("trusted");
+                    save(c, other, q);
+                }
+            }
+        }
         status(user).lastError = null;
         kick(c, user);
-        Backup.kick(c, user); // las copias que esperaban a que se volviera a entrar
+        // las copias que esperaban a que se volviera a entrar, y las del otro (puede que ya no compartan cuenta)
+        for (String u : Users.NAMES) Backup.kick(c, u);
+    }
+
+    /**
+     * Las conexiones de antes de la 2.21 no guardaban de qué cuenta de Amazon eran: se averigua
+     * con la sesión y se apunta (sin eso no se sabría si Fer y Julss comparten cuenta).
+     */
+    static void fillAccount(Context c, String user, Properties p, Amazon a) throws IOException {
+        if (p.getProperty("root") != null) return;
+        String[] root = a.root();
+        synchronized (EchoSync.class) {
+            Properties q = config(c, user);
+            if (!p.getProperty("cookie", "").equals(q.getProperty("cookie"))) throw new AccountChanged();
+            q.setProperty("root", root[0]);
+            if (root[1] != null) q.setProperty("owner", root[1]);
+            save(c, user, q);
+            remember(c, user, root);
+        }
+        p.setProperty("root", root[0]);
+        if (root[1] != null) p.setProperty("owner", root[1]);
+    }
+
+    /**
+     * La primera vez en cada arranque: apunta en el historial las cuentas ya conectadas (las de
+     * antes de la 2.21 no se apuntaban), para que «antes» las tenga en cuenta.
+     */
+    private static synchronized void seed(Context c) {
+        if (seeded) return;
+        seeded = true;
+        for (String u : Users.NAMES) {
+            Properties p = raw(c, u);
+            if (p.getProperty("root") != null) remember(c, u, new String[]{p.getProperty("root"), p.getProperty("owner")});
+        }
+    }
+
+    /** Apunta que este usuario ha entrado con esta cuenta de Amazon. */
+    private static synchronized void remember(Context c, String user, String[] root) {
+        for (String[] h : history(c)) if (h[0].equals(user) && h[1].equals(root[0])) return;
+        try {
+            Writer w = new OutputStreamWriter(new FileOutputStream(historyFile(c), true), "UTF-8");
+            try {
+                w.write(user + "\t" + root[0] + "\t" + (root[1] == null ? "" : root[1]) + "\n");
+            } finally {
+                w.close();
+            }
+        } catch (IOException ignored) {
+        }
+    }
+
+    private static synchronized List<String[]> history(Context c) {
+        List<String[]> out = new ArrayList<String[]>();
+        File f = historyFile(c);
+        if (!f.isFile()) return out;
+        try {
+            BufferedReader in = new BufferedReader(new InputStreamReader(new FileInputStream(f), "UTF-8"));
+            try {
+                String l;
+                while ((l = in.readLine()) != null) {
+                    String[] x = l.split("\t", -1);
+                    if (x.length == 3 && !x[0].isEmpty() && !x[1].isEmpty()) out.add(x);
+                }
+            } finally {
+                in.close();
+            }
+        } catch (IOException ignored) {
+        }
+        return out;
+    }
+
+    /**
+     * Si el otro usuario de Súbelo tiene conectada esta misma cuenta de Amazon («now»), o entró con
+     * ella alguna vez («before»): {usuario, "now" o "before"}, o null. Amazon Fotos no tiene perfiles:
+     * quien entra en una cuenta lo ve todo, así que la copia de seguridad no se hace. Lo de «antes»
+     * vale si el dueño dice que el otro ya no sabe entrar (trust()).
+     */
+    static String[] shared(Context c, String user) {
+        seed(c);
+        // sin descifrar: si la sesión del otro no se pudiera abrir, seguiría contando como conectada
+        Properties mine = raw(c, user);
+        String root = mine.getProperty("root"), owner = mine.getProperty("owner");
+        if (!hasSession(mine) || root == null) return null;
+        for (String other : Users.NAMES) {
+            if (other.equals(user)) continue;
+            Properties p = raw(c, other);
+            if (hasSession(p) && same(root, owner, p.getProperty("root"), p.getProperty("owner"))) {
+                return new String[]{other, "now"};
+            }
+        }
+        if (root.equals(mine.getProperty("trusted"))) return null;
+        for (String[] h : history(c)) {
+            if (h[0].equals(user)) continue;
+            if (same(root, owner, h[1], h[2].isEmpty() ? null : h[2])) return new String[]{h[0], "before"};
+        }
+        return null;
+    }
+
+    private static boolean same(String root, String owner, String root2, String owner2) {
+        return root.equals(root2) || owner != null && owner.equals(owner2);
+    }
+
+    /** El otro usuario con quien se comparte (o se compartió) la cuenta de Amazon, o null. */
+    static String sameAccountAs(Context c, String user) {
+        String[] s = shared(c, user);
+        return s == null ? null : s[0];
+    }
+
+    /**
+     * El dueño de la cuenta dice que el otro ya no sabe entrar en ella (ha cambiado la contraseña de
+     * Amazon, o nunca la supo): vuelven las copias. Si el otro la tiene conectada ahora, no sirve.
+     */
+    static void trust(Context c, String user) throws IOException {
+        synchronized (EchoSync.class) {
+            Properties p = config(c, user);
+            String root = p.getProperty("root");
+            if (p.getProperty("cookie") == null || root == null) throw new IOException("Primero entra en Amazon");
+            String[] sh = shared(c, user);
+            if (sh != null && sh[1].equals("now")) {
+                throw new IOException(sh[0] + " tiene conectada ahora esta misma cuenta de Amazon: primero tiene que quitarla");
+            }
+            p.setProperty("trusted", root);
+            save(c, user, p);
+        }
+        Backup.kick(c, user);
     }
 
     static void disconnect(Context c, String user) {
         synchronized (EchoSync.class) {
+            seed(c);
+            Properties p = raw(c, user);
+            if (p.getProperty("root") != null) remember(c, user, new String[]{p.getProperty("root"), p.getProperty("owner")});
             configFile(c, user).delete();
             stateFile(c, user).delete();
+            OPENED.remove(user);
+            bump(user);
         }
         Status s = status(user);
         s.lastError = null;
         s.inAlbum = 0;
         s.pending = 0;
+        for (String u : Users.NAMES) Backup.kick(c, u); // el otro puede que ya no comparta cuenta
+    }
+
+    /**
+     * Olvida solo la sesión de Amazon (al cambiar la contraseña de Súbelo desde la tele): quien ponga
+     * la nueva no hereda la cuenta, pero si vuelve a entrar con la misma, el álbum del Echo sigue.
+     */
+    static void forgetSession(Context c, String user) {
+        synchronized (EchoSync.class) {
+            Properties p = raw(c, user);
+            if (p.isEmpty()) return;
+            p.remove("cookie");
+            p.remove("cookieEnc");
+            p.remove("cookieIv");
+            p.remove("expired");
+            OPENED.remove(user);
+            try {
+                save(c, user, p);
+            } catch (IOException e) {
+                configFile(c, user).delete();
+            }
+            bump(user);
+        }
+        status(user).lastError = null;
     }
 
     static List<Amazon.Album> albums(Context c, String user) throws IOException {
@@ -139,7 +387,7 @@ final class EchoSync {
         try {
             return amazon(p).albums();
         } catch (Amazon.AmazonException e) {
-            if (e.code == 401) expired(c, user, e.getMessage());
+            if (e.code == 401) expired(c, user, p.getProperty("cookie"), e.getMessage());
             throw e;
         }
     }
@@ -151,11 +399,13 @@ final class EchoSync {
     }
 
     static void setAlbum(Context c, String user, String id, String name) throws IOException {
-        Properties p = config(c, user);
-        if (p.getProperty("cookie") == null) throw new IOException("Primero conecta Amazon Photos");
-        p.setProperty("album", id);
-        p.setProperty("albumName", name == null || name.isEmpty() ? "Álbum" : name);
-        save(c, user, p);
+        synchronized (EchoSync.class) {
+            Properties p = config(c, user);
+            if (p.getProperty("cookie") == null) throw new IOException("Primero conecta Amazon Photos");
+            p.setProperty("album", id);
+            p.setProperty("albumName", name == null || name.isEmpty() ? "Álbum" : name);
+            save(c, user, p);
+        }
         kick(c, user);
     }
 
@@ -165,7 +415,14 @@ final class EchoSync {
         JSONObject o = new JSONObject();
         o.put("connected", p.getProperty("cookie") != null);
         o.put("expired", p.getProperty("expired") != null);
+        String[] same = shared(c, user);
+        o.put("sameAs", same == null ? JSONObject.NULL : same[0]);
+        o.put("sameBefore", same != null && same[1].equals("before"));
+        o.put("encrypted", Secret.works());
         o.put("folder", FOLDER);
+        if (p.getProperty("unreadable") != null && s.lastError == null) {
+            s.lastError = "No se ha podido leer la sesión de Amazon guardada en el box: vuelve a entrar";
+        }
         if (p.getProperty("album") != null) {
             JSONObject a = new JSONObject();
             a.put("id", p.getProperty("album"));
@@ -202,18 +459,21 @@ final class EchoSync {
         }
     }
 
-    /** La sesión de Amazon ya no vale (lo usa también la copia de seguridad). */
-    static void markExpired(Context c, String user, String msg) {
-        expired(c, user, msg);
+    /** La sesión de Amazon «cookie» ya no vale (lo usa también la copia de seguridad). */
+    static void markExpired(Context c, String user, String cookie, String msg) {
+        expired(c, user, cookie, msg);
     }
 
-    private static void expired(Context c, String user, String msg) {
-        Properties p = config(c, user);
-        if (p.getProperty("cookie") == null) return;
-        p.setProperty("expired", "1");
-        try {
-            save(c, user, p);
-        } catch (IOException ignored) {
+    private static void expired(Context c, String user, String cookie, String msg) {
+        synchronized (EchoSync.class) {
+            Properties p = config(c, user);
+            // si mientras tanto ha entrado otra vez (o con otra cuenta), la nueva sesión no ha caducado
+            if (p.getProperty("cookie") == null || !p.getProperty("cookie").equals(cookie)) return;
+            p.setProperty("expired", "1");
+            try {
+                save(c, user, p);
+            } catch (IOException ignored) {
+            }
         }
         status(user).lastError = msg;
     }
@@ -267,6 +527,7 @@ final class EchoSync {
     }
 
     private static void sync(Context c, String user) throws IOException {
+        final int gen = gen(user);
         Properties p = config(c, user);
         String album = p.getProperty("album");
         if (p.getProperty("cookie") == null || album == null || p.getProperty("expired") != null) return;
@@ -296,8 +557,11 @@ final class EchoSync {
             s.total = photos.size();
             s.pending = pending;
             String folder = p.getProperty("folder");
+            String cookie = p.getProperty("cookie");
             try {
+                fillAccount(c, user, p, a);
                 for (final Store.FileInfo f : photos) {
+                    if (gen(user) != gen) throw new AccountChanged();
                     present.add(f.name);
                     Entry e = state.get(f.name);
                     if (e != null && e.size == f.size) {
@@ -306,11 +570,10 @@ final class EchoSync {
                     }
                     if (e != null && album.equals(e.album)) toRemove.add(e.node); // la foto cambió
                     if (folder == null) {
-                        folder = a.folder(p.getProperty("root", a.rootId()), AMAZON_FOLDER);
-                        p.setProperty("folder", folder);
-                        save(c, user, p);
+                        folder = a.folder(p.getProperty("root"), AMAZON_FOLDER);
+                        setFolder(c, user, gen, folder);
                     }
-                    String node = a.upload(folder, f.name, new Amazon.Opener() {
+                    Amazon.Uploaded up = a.uploadNode(folder, f.name, new Amazon.Opener() {
                         @Override
                         public InputStream open() throws IOException {
                             final Store.Readable rd = st(c).read(dir, f.name);
@@ -328,29 +591,40 @@ final class EchoSync {
                             };
                         }
                     }, f.size);
+                    if (!up.inFolder) {
+                        // ya estaba en Amazon en otra carpeta (la copia de seguridad, que va oculta, o la
+                        // del móvil): se usa esa, pero sin ocultar, que es para que salga en el Echo
+                        try {
+                            a.setHidden(up.id, false);
+                        } catch (Amazon.AmazonException ex) {
+                            if (ex.code == 401) throw ex;
+                        }
+                    }
                     Entry n = new Entry();
                     n.name = f.name;
                     n.size = f.size;
-                    n.node = node;
+                    n.node = up.id;
                     n.album = null;
                     state.put(f.name, n);
-                    toAdd.add(node);
-                    if (toAdd.size() >= 10) flush(c, user, a, album, state, toAdd, toRemove, s);
+                    toAdd.add(up.id);
+                    if (toAdd.size() >= 10) flush(c, user, gen, a, album, state, toAdd, toRemove, s);
                 }
                 for (Entry e : new ArrayList<Entry>(state.values())) {
                     if (present.contains(e.name)) continue;
                     if (album.equals(e.album)) toRemove.add(e.node);
                     state.remove(e.name);
                 }
-                flush(c, user, a, album, state, toAdd, toRemove, s);
+                flush(c, user, gen, a, album, state, toAdd, toRemove, s);
                 s.lastError = null;
                 s.lastOk = System.currentTimeMillis();
+            } catch (AccountChanged e) {
+                // lo de la sesión de antes ya no vale: ni se guarda ni es un error
             } catch (Amazon.AmazonException e) {
-                save(c, user, state);
-                if (e.code == 401) expired(c, user, e.getMessage());
+                saveQuietly(c, user, gen, state);
+                if (e.code == 401) expired(c, user, cookie, e.getMessage());
                 else s.lastError = e.getMessage();
             } catch (IOException e) {
-                save(c, user, state);
+                saveQuietly(c, user, gen, state);
                 s.lastError = e.getMessage();
             }
             int in = 0;
@@ -367,9 +641,18 @@ final class EchoSync {
         return st;
     }
 
+    /** Apunta la carpeta de Amazon, si la sesión sigue siendo la misma. */
+    private static synchronized void setFolder(Context c, String user, int gen, String folder) throws IOException {
+        if (gen(user) != gen) throw new AccountChanged();
+        Properties q = config(c, user);
+        q.setProperty("folder", folder);
+        save(c, user, q);
+    }
+
     /** Añade al álbum lo subido, quita lo que ya no está y apunta el progreso. */
-    private static void flush(Context c, String user, Amazon a, String album, Map<String, Entry> state,
+    private static void flush(Context c, String user, int gen, Amazon a, String album, Map<String, Entry> state,
                               List<String> toAdd, List<String> toRemove, Status s) throws IOException {
+        if (gen(user) != gen) throw new AccountChanged();
         if (!toRemove.isEmpty()) {
             a.removeFromAlbum(album, toRemove);
             toRemove.clear();
@@ -381,7 +664,7 @@ final class EchoSync {
             s.pending = Math.max(0, s.pending - toAdd.size());
             toAdd.clear();
         }
-        save(c, user, state);
+        save(c, user, gen, state);
     }
 
     // ---------- lo ya subido ----------
@@ -413,7 +696,16 @@ final class EchoSync {
         return m;
     }
 
-    private static synchronized void save(Context c, String user, Map<String, Entry> state) throws IOException {
+    private static void saveQuietly(Context c, String user, int gen, Map<String, Entry> state) {
+        try {
+            save(c, user, gen, state);
+        } catch (IOException ignored) {
+        }
+    }
+
+    /** Guarda lo enviado al Echo, salvo que la cuenta de Amazon haya cambiado desde «gen». */
+    private static synchronized void save(Context c, String user, int gen, Map<String, Entry> state) throws IOException {
+        if (gen(user) != gen) throw new AccountChanged();
         File f = stateFile(c, user), tmp = new File(f.getPath() + ".tmp");
         Writer w = new OutputStreamWriter(new FileOutputStream(tmp), "UTF-8");
         try {

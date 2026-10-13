@@ -43,17 +43,23 @@ final class AmazonSession {
             byte[] enc = ci.doFinal(cookie.getBytes("UTF-8"));
             p(c).edit().putString("iv", Base64.encodeToString(ci.getIV(), Base64.NO_WRAP))
                     .putString("cookie", Base64.encodeToString(enc, Base64.NO_WRAP))
-                    .putString("tld", tld).remove("caducada").apply();
+                    .putString("tld", tld).putString("deQuien", Prefs.user(c) == null ? "" : Prefs.user(c))
+                    .remove("caducada").apply();
         } catch (Exception e) {
             clear(c); // sin almacén seguro no se guarda: tocará entrar otra vez
         }
     }
 
-    /** La sesión, o null si no hay (o no se puede descifrar). */
+    /** La sesión, o null si no hay, no se puede descifrar o es de otro usuario de Súbelo. */
     static String cookie(Context c) {
         SharedPreferences p = p(c);
         String iv = p.getString("iv", null), enc = p.getString("cookie", null);
         if (iv == null || enc == null) return null;
+        String owner = p.getString("deQuien", null), user = Prefs.user(c);
+        if (owner == null || user == null || !owner.equals(user)) {
+            clear(c); // guardada por otro usuario de Súbelo en este móvil: no se usa nunca
+            return null;
+        }
         try {
             Cipher ci = Cipher.getInstance("AES/GCM/NoPadding");
             ci.init(Cipher.DECRYPT_MODE, key(), new GCMParameterSpec(128, Base64.decode(iv, Base64.NO_WRAP)));
@@ -68,7 +74,7 @@ final class AmazonSession {
     }
 
     static void clear(Context c) {
-        p(c).edit().remove("iv").remove("cookie").remove("caducada").apply();
+        p(c).edit().remove("iv").remove("cookie").remove("deQuien").remove("caducada").apply();
     }
 
     private static SecretKey key() throws Exception {

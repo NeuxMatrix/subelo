@@ -78,9 +78,19 @@ final class Amazon {
 
     /** Comprueba la sesión: la carpeta raíz de Amazon Drive. */
     String rootId() throws IOException {
+        return root()[0];
+    }
+
+    /**
+     * La carpeta raíz y el cliente de Amazon dueño de la cuenta ({id, ownerId}; ownerId puede ser
+     * null). Las dos cosas son únicas por cuenta: sirven para saber si dos sesiones son de la misma.
+     */
+    String[] root() throws IOException {
         JSONObject o = json("GET", drive + "/nodes?filters=" + enc("isRoot:true") + "&asset=ALL&tempLink=false&" + V2, null);
         try {
-            return o.getJSONArray("data").getJSONObject(0).getString("id");
+            JSONObject n = o.getJSONArray("data").getJSONObject(0);
+            String owner = n.optString("ownerId", "");
+            return new String[]{n.getString("id"), owner.isEmpty() ? null : owner};
         } catch (JSONException e) {
             throw new IOException("Amazon no ha devuelto la carpeta principal");
         }
@@ -157,6 +167,21 @@ final class Amazon {
      * devuelve la que había; si hay otra distinta con ese nombre, la sube con otro nombre.
      */
     String upload(String parentId, String name, Opener data, long size) throws IOException {
+        return uploadNode(parentId, name, data, size).id;
+    }
+
+    /** Lo subido: identificador y si está seguro de que es un archivo de esa carpeta. */
+    static final class Uploaded {
+        final String id;
+        final boolean inFolder;
+
+        Uploaded(String id, boolean inFolder) {
+            this.id = id;
+            this.inFolder = inFolder;
+        }
+    }
+
+    Uploaded uploadNode(String parentId, String name, Opener data, long size) throws IOException {
         String tryName = name;
         for (int attempt = 1; attempt <= 5; attempt++) {
             InputStream in = data.open();
@@ -170,12 +195,16 @@ final class Amazon {
             if (r.code / 100 == 2) {
                 String id = nodeId(r.json());
                 if (id == null) throw new IOException("Amazon no ha devuelto el identificador de " + name);
-                return id;
+                return new Uploaded(id, true);
             }
             if (r.code != 409) throw fail(r);
             String existing = nodeId(r.json());
             if (existing == null) throw fail(r);
-            if (sizeOf(existing) == size) return existing; // la misma foto ya estaba
+            JSONObject node = node(existing);
+            JSONObject cp = node == null ? null : node.optJSONObject("contentProperties");
+            if (cp != null && cp.optLong("size", -1) == size) { // la misma foto ya estaba
+                return new Uploaded(existing, hasParent(node, parentId));
+            }
             int dot = name.lastIndexOf('.');
             tryName = dot > 0 ? name.substring(0, dot) + " (" + (attempt + 1) + ")" + name.substring(dot)
                     : name + " (" + (attempt + 1) + ")";
@@ -183,13 +212,65 @@ final class Amazon {
         throw new IOException("Demasiados nombres repetidos en Amazon para " + name);
     }
 
-    private long sizeOf(String nodeId) {
+    static boolean hasParent(JSONObject node, String parentId) {
+        JSONArray parents = node.optJSONArray("parents");
+        for (int i = 0; parents != null && i < parents.length(); i++) if (parentId.equals(parents.optString(i))) return true;
+        return false;
+    }
+
+    private JSONObject node(String nodeId) {
         try {
-            JSONObject n = json("GET", drive + "/nodes/" + enc(nodeId) + "?asset=NONE&tempLink=false&" + V2, null);
-            JSONObject cp = n.optJSONObject("contentProperties");
-            return cp == null ? -1 : cp.optLong("size", -1);
+            return json("GET", drive + "/nodes/" + enc(nodeId) + "?asset=NONE&tempLink=false&" + V2, null);
         } catch (IOException e) {
-            return -1;
+            return null;
+        }
+    }
+
+    /**
+     * El archivo o carpeta, o null si esta cuenta no lo tiene (borrado, o de otra cuenta de Amazon).
+     * Si la sesión ha caducado, falla con 401.
+     */
+    JSONObject nodeIfMine(String nodeId) throws IOException {
+        Resp r = request("GET", drive + "/nodes/" + enc(nodeId) + "?asset=NONE&tempLink=false&" + V2, null, null, null, -1);
+        if (r.code / 100 == 2) return r.json();
+        if (r.code == 400 || r.code == 403 || r.code == 404) {
+            root(); // ¿no es suyo, o es que la sesión ya no vale? Si no vale, esto falla con 401
+            return null;
+        }
+        throw fail(r);
+    }
+
+    /**
+     * Oculta una foto en Amazon Fotos: deja de salir en la línea de tiempo, en los recuerdos y en
+     * el Echo (sigue en su carpeta y en «Ocultos», para quien entre con esa cuenta).
+     * Si Amazon no deja tocar esa foto, falla con su código (403, 404…), no con 401.
+     */
+    void hide(String nodeId) throws IOException {
+        setHidden(nodeId, true);
+    }
+
+    void setHidden(String nodeId, boolean hidden) throws IOException {
+        try {
+            JSONObject body = new JSONObject();
+            body.put("settings", new JSONObject().put("hidden", hidden));
+            body.put("resourceVersion", "V2");
+            body.put("ContentType", "JSON");
+            Resp r = request("PATCH", drive + "/nodes/" + enc(nodeId), "application/json", body.toString().getBytes("UTF-8"), null, -1);
+            if (r.code / 100 == 2) {
+                // si contesta con el archivo, se comprueba que de verdad ha cambiado
+                JSONObject st = r.json().optJSONObject("settings");
+                if (st != null && st.has("hidden") && st.optBoolean("hidden") != hidden) {
+                    throw new AmazonException(422, "Amazon no ha cambiado si se ve o no");
+                }
+                return;
+            }
+            if (r.code == 400 || r.code == 403 || r.code == 404) {
+                String msg = r.json().optString("message", "");
+                throw new AmazonException(r.code, "Amazon respondió " + r.code + (msg.isEmpty() ? "" : ": " + msg));
+            }
+            throw fail(r);
+        } catch (JSONException e) {
+            throw new IOException(e.getMessage());
         }
     }
 

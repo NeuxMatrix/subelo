@@ -70,10 +70,13 @@ import javax.net.ssl.SSLSocketFactory;
  *                            toca el archivo: se guarda en el box y el mapa la usa en lugar del GPS de la foto.
  * POST /api/echo             path=&name=…: copia esas fotos a la carpeta «Echo» (va al álbum de Amazon Photos)
  * GET  /api/amazon           estado del puente con Amazon Photos (EchoSync)
- * POST /api/amazon/connect   cookie=&tld=: guarda la sesión de Amazon (entrada desde el móvil); devuelve álbumes
+ * POST /api/amazon/connect   cookie=&tld=&password=: guarda la sesión de Amazon (entrada desde el móvil); devuelve álbumes.
+ *                            Pide la contraseña de Súbelo, igual que /api/amazon/disconnect (password=).
  * GET  /api/amazon/albums    álbumes de Amazon Photos
  * POST /api/amazon/album     id=&title= o link=: el álbum del Echo
  * POST /api/amazon/sync      repasar ya;  POST /api/amazon/disconnect: olvidar la sesión de Amazon
+ * POST /api/amazon/trust     password=: el otro usuario entró antes con esta cuenta de Amazon pero ya no
+ *                            sabe entrar (se le cambió la contraseña): vuelven las copias de seguridad
  * GET  /api/backup           copia en Amazon Fotos (Backup): carpetas marcadas y cuánto llevan subido
  * POST /api/backup/add       path=: hacer backup de esa carpeta (con sus subcarpetas) en Amazon
  * POST /api/backup/remove    path=: dejar de hacerlo (lo que ya está en Amazon se queda)
@@ -450,7 +453,7 @@ final class HttpServer {
             return;
         }
         if (path.equals("/api/amazon") || path.startsWith("/api/amazon/")) {
-            amazon(method, path, user, params, out);
+            amazon(ip, method, path, user, password, params, out);
             return;
         }
         if (path.equals("/api/google") || path.startsWith("/api/google/")) {
@@ -758,8 +761,8 @@ final class HttpServer {
 
     // ---------- Echo (Amazon Photos) ----------
 
-    private void amazon(String method, String path, String user, Map<String, String> params, OutputStream out)
-            throws IOException, JSONException {
+    private void amazon(String ip, String method, String path, String user, String password,
+                        Map<String, String> params, OutputStream out) throws IOException, JSONException {
         if (path.equals("/api/amazon")) {
             json(out, 200, EchoSync.statusJson(ctx, user));
             return;
@@ -767,6 +770,25 @@ final class HttpServer {
         if (!method.equals("POST") && !path.equals("/api/amazon/albums")) {
             error(out, 405, "Usa POST");
             return;
+        }
+        // cambiar de cuenta de Amazon (o quitarla) pide la contraseña de Súbelo: con el móvil de otro
+        // desbloqueado no se pueden llevar sus copias a otra cuenta
+        if (path.equals("/api/amazon/connect") || path.equals("/api/amazon/disconnect") || path.equals("/api/amazon/trust")) {
+            if (password == null) {
+                error(out, 403, "Para cambiar la cuenta de Amazon hace falta tu contraseña de Súbelo. "
+                        + "Si no te la pide, actualiza la app del móvil.");
+                return;
+            }
+            if (locked(ip)) {
+                error(out, 429, "Demasiadas contraseñas incorrectas. Espera 5 minutos.");
+                return;
+            }
+            if (!Users.check(ctx, user, password)) {
+                fail(ip);
+                error(out, 403, "Esa no es tu contraseña de Súbelo");
+                return;
+            }
+            clearFails(ip);
         }
         // los fallos de Amazon van como 502: el 401 lo reserva la app para «sesión de Súbelo caducada»
         try {
@@ -801,6 +823,9 @@ final class HttpServer {
             } else if (path.equals("/api/amazon/sync")) {
                 EchoSync.kick(ctx, user);
                 json(out, 200, EchoSync.statusJson(ctx, user));
+            } else if (path.equals("/api/amazon/trust")) {
+                EchoSync.trust(ctx, user);
+                json(out, 200, Backup.statusJson(ctx, user));
             } else if (path.equals("/api/amazon/disconnect")) {
                 EchoSync.disconnect(ctx, user);
                 json(out, 200, EchoSync.statusJson(ctx, user));

@@ -45,6 +45,11 @@ import java.util.concurrent.Executors;
 public class AmazonActivity extends Activity {
     /** Solo entrar en Amazon (para «☁ Copias en Amazon»): al terminar, vuelve atrás. */
     static final String EXTRA_ONLY_LOGIN = "soloEntrar";
+    /**
+     * La contraseña de Súbelo que «☁ Copias en Amazon» acaba de comprobar, para no pedirla dos
+     * veces seguidas. Solo en memoria; se gasta al abrir esta pantalla.
+     */
+    static String handoff;
     /** Amazon de España; las cookies de sesión se llaman «…-acbes». */
     private static final String TLD = "es";
     private static final String HOME = "https://www.amazon." + TLD;
@@ -57,6 +62,8 @@ public class AmazonActivity extends Activity {
     private Button loginButton, albumButton, syncButton, disconnectButton;
     private WebView web;
     private boolean sending;
+    /** Contraseña de Súbelo para este cambio de cuenta (el box la pide para conectar o desconectar). */
+    private String password;
     private JSONObject last;
 
     private final Runnable poll = new Runnable() {
@@ -103,7 +110,13 @@ public class AmazonActivity extends Activity {
         loginButton = Brutal.button(this, "Entrar en Amazon Photos", Brutal.ORANGE, Brutal.BLACK, new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                startLogin();
+                withPassword(new PasswordOk() {
+                    @Override
+                    public void ok(String pw) {
+                        password = pw;
+                        startLogin();
+                    }
+                }, null);
             }
         });
         card.addView(loginButton, Brutal.full(this));
@@ -138,8 +151,9 @@ public class AmazonActivity extends Activity {
         TextView note = Brutal.mono(this, 11, Brutal.INK);
         note.setText("AMAZON NO TIENE UNA FORMA OFICIAL DE HACER ESTO: SÚBELO USA LA MISMA CONEXIÓN QUE SU WEB, "
                 + "ASÍ QUE PUEDE DEJAR DE IR SI AMAZON LA CAMBIA. TU SESIÓN DE AMAZON SE GUARDA DENTRO DEL BOX "
-                + "(NO EN EL DISCO) Y, CIFRADA, EN ESTE MÓVIL PARA VER TUS COPIAS FUERA DE CASA. "
-                + "SE BORRA DE LOS DOS AL PULSAR «DESCONECTAR».");
+                + "(NO EN EL DISCO), CIFRADA SI EL BOX LO PERMITE, Y CIFRADA EN ESTE MÓVIL PARA VER TUS COPIAS FUERA DE CASA. "
+                + "SE BORRA DE LOS DOS AL PULSAR «DESCONECTAR» Y DEL MÓVIL AL CERRAR TU SESIÓN DE SÚBELO. "
+                + "CADA USUARIO DE SÚBELO, CON SU PROPIA CUENTA DE AMAZON: AMAZON FOTOS NO TIENE PERFILES.");
         note.setPadding(dp(2), dp(10), 0, 0);
         col.addView(note);
 
@@ -151,7 +165,82 @@ public class AmazonActivity extends Activity {
         }
         setContentView(root);
         show(null);
-        if (getIntent().getBooleanExtra(EXTRA_ONLY_LOGIN, false)) startLogin();
+        if (getIntent().getBooleanExtra(EXTRA_ONLY_LOGIN, false)) {
+            String h = handoff;
+            handoff = null;
+            if (h != null) {
+                password = h;
+                startLogin();
+            } else {
+                withPassword(new PasswordOk() {
+                    @Override
+                    public void ok(String pw) {
+                        password = pw;
+                        startLogin();
+                    }
+                }, new Runnable() {
+                    @Override
+                    public void run() {
+                        finish();
+                    }
+                });
+            }
+        }
+    }
+
+    private interface PasswordOk {
+        void ok(String password);
+    }
+
+    /**
+     * Pide la contraseña de Súbelo antes de cambiar o quitar la cuenta de Amazon: así, con el móvil
+     * de otro desbloqueado no se pueden llevar sus copias a otra cuenta. El box la vuelve a comprobar.
+     */
+    private void withPassword(final PasswordOk then, final Runnable cancelled) {
+        LinearLayout form = new LinearLayout(this);
+        form.setOrientation(LinearLayout.VERTICAL);
+        form.setPadding(dp(20), dp(8), dp(20), 0);
+        final EditText pw = Brutal.password(this, "Contraseña de " + Prefs.user(this));
+        form.addView(pw);
+        final AlertDialog d = new AlertDialog.Builder(this)
+                .setTitle("Tu contraseña de Súbelo")
+                .setMessage("Para cambiar la cuenta de Amazon de " + Prefs.user(this) + ".")
+                .setView(form)
+                .setPositiveButton("Seguir", null)
+                .setNegativeButton("Cancelar", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface di, int w) {
+                        if (cancelled != null) cancelled.run();
+                    }
+                })
+                .setCancelable(false)
+                .create();
+        d.setOnShowListener(new DialogInterface.OnShowListener() {
+            @Override
+            public void onShow(DialogInterface di) {
+                d.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        String p = pw.getText().toString();
+                        if (p.isEmpty()) return;
+                        long wait = AmazonSession.waitMs(AmazonActivity.this);
+                        if (wait > 0) {
+                            pw.setError("Demasiados intentos: espera " + (wait / 1000 + 1) + " s");
+                            return;
+                        }
+                        // si el móvil ya sabe comprobarla, se comprueba aquí; si no, la comprueba el box
+                        if (AmazonSession.hasPassword(AmazonActivity.this) && !AmazonSession.check(AmazonActivity.this, p)) {
+                            pw.setText("");
+                            pw.setError("Contraseña incorrecta");
+                            return;
+                        }
+                        d.dismiss();
+                        then.ok(p);
+                    }
+                });
+            }
+        });
+        d.show();
     }
 
     @Override
@@ -248,10 +337,12 @@ public class AmazonActivity extends Activity {
                 + (pending > 0 ? " · " + pending + " POR ENVIAR" : "")
                 + (total >= 0 && total > in + pending ? " · " + (total - in - pending) + " SIN ENVIAR" : "")
                 + (ok > 0 ? "\nÚLTIMO REPASO: " + DateFormat.getTimeInstance(DateFormat.SHORT).format(new Date(ok)) : ""));
+        if (!o.isNull("sameAs")) err = (err == null ? "" : err + "\n\n") + sameAccountText(o.optString("sameAs"), o.optBoolean("sameBefore"));
         errorText.setText(err == null || expired ? "" : "✖ " + err);
         errorText.setVisibility(err == null || expired ? View.GONE : View.VISIBLE);
-        loginButton.setText(connected ? "Volver a entrar en Amazon" : "Entrar en Amazon Photos");
-        loginButton.setVisibility(!connected || expired ? View.VISIBLE : View.GONE);
+        boolean shared = connected && !o.isNull("sameAs");
+        loginButton.setText(shared ? "Entrar con otra cuenta de Amazon" : connected ? "Volver a entrar en Amazon" : "Entrar en Amazon Photos");
+        loginButton.setVisibility(!connected || expired || shared ? View.VISIBLE : View.GONE);
         albumButton.setText(album == null ? "Elegir el álbum del Echo" : "Cambiar de álbum");
         albumButton.setVisibility(connected && !expired ? View.VISIBLE : View.GONE);
         syncButton.setVisibility(connected && !expired && album != null ? View.VISIBLE : View.GONE);
@@ -298,13 +389,19 @@ public class AmazonActivity extends Activity {
                 .setPositiveButton("Desconectar", new DialogInterface.OnClickListener() {
                     @Override
                     public void onClick(DialogInterface d, int w) {
-                        act(new Call() {
+                        withPassword(new PasswordOk() {
                             @Override
-                            public JSONObject run(BoxClient bc) throws IOException {
-                                AmazonSession.clear(AmazonActivity.this);
-                                return bc.amazonDisconnect();
+                            public void ok(final String pw) {
+                                act(new Call() {
+                                    @Override
+                                    public JSONObject run(BoxClient bc) throws IOException {
+                                        JSONObject r = bc.amazonDisconnect(pw);
+                                        AmazonSession.clear(AmazonActivity.this); // solo si el box ha dicho que sí
+                                        return r;
+                                    }
+                                });
                             }
-                        });
+                        }, null);
                     }
                 })
                 .setNegativeButton("Cancelar", null)
@@ -316,7 +413,6 @@ public class AmazonActivity extends Activity {
     @SuppressLint("SetJavaScriptEnabled")
     private void startLogin() {
         final CookieManager cm = CookieManager.getInstance();
-        cm.removeAllCookies(null); // empezar limpio: la sesión vieja no sirve
         cm.setAcceptCookie(true);
         web = new WebView(this);
         cm.setAcceptThirdPartyCookies(web, true);
@@ -355,7 +451,13 @@ public class AmazonActivity extends Activity {
         box.addView(web, new LinearLayout.LayoutParams(-1, 0, 1));
         root.addView(box, new FrameLayout.LayoutParams(-1, -1));
         panel.setVisibility(View.GONE);
-        web.loadUrl(HOME + "/photos/all");
+        // empezar limpio: hasta que no se borran las cookies de antes no se abre la página
+        cm.removeAllCookies(new android.webkit.ValueCallback<Boolean>() {
+            @Override
+            public void onReceiveValue(Boolean removed) {
+                if (web != null) web.loadUrl(HOME + "/photos/all");
+            }
+        });
     }
 
     /** ¿Ya ha entrado? Amazon pone la cookie «at-acbes» al iniciar sesión. */
@@ -364,7 +466,6 @@ public class AmazonActivity extends Activity {
         String ck = CookieManager.getInstance().getCookie(HOME);
         if (ck == null || !ck.contains("at-acb" + TLD + "=")) return;
         final String cookie = ck;
-        AmazonSession.save(this, cookie, TLD);
         sending = true;
         closeWeb();
         final boolean onlyLogin = getIntent().getBooleanExtra(EXTRA_ONLY_LOGIN, false);
@@ -374,22 +475,61 @@ public class AmazonActivity extends Activity {
             public void run() {
                 JSONObject r = null;
                 String err = null;
+                boolean no = false;
                 try {
-                    r = BoxClient.connect(AmazonActivity.this).amazonConnect(cookie, TLD);
+                    r = BoxClient.connect(AmazonActivity.this).amazonConnect(cookie, TLD, password);
                 } catch (IOException e) {
                     err = e.getMessage();
+                    int code = e instanceof BoxClient.BoxException ? ((BoxClient.BoxException) e).code : 0;
+                    no = code == 401 || code == 403 || code == 429; // el box no se cree que seas tú
                 }
                 final JSONObject res = r;
                 final String error = err;
+                final boolean refused = no;
                 runOnUiThread(new Runnable() {
                     @Override
                     public void run() {
                         sending = false;
                         forgetSession();
+                        password = null;
+                        if (isFinishing() || isDestroyed()) {
+                            // ya se ha cerrado la pantalla: sin avisos, pero la sesión sí se guarda si vale
+                            if (!refused) AmazonSession.save(AmazonActivity.this, cookie, TLD);
+                            return;
+                        }
+                        if (refused) {
+                            new AlertDialog.Builder(AmazonActivity.this)
+                                    .setMessage("✖ " + error)
+                                    .setPositiveButton("Vale", null)
+                                    .setOnDismissListener(new DialogInterface.OnDismissListener() {
+                                        @Override
+                                        public void onDismiss(DialogInterface d) {
+                                            if (onlyLogin) finish();
+                                            else refresh();
+                                        }
+                                    })
+                                    .show();
+                            return;
+                        }
+                        // fuera de casa (box sin contestar) también: para ver las copias basta con el móvil
+                        AmazonSession.save(AmazonActivity.this, cookie, TLD);
                         if (onlyLogin) {
                             // fuera de casa el box no contesta: para ver las copias basta con el móvil
-                            Toast.makeText(AmazonActivity.this, "Dentro de Amazon", Toast.LENGTH_SHORT).show();
                             setResult(RESULT_OK);
+                            if (res != null && !res.isNull("sameAs")) {
+                                new AlertDialog.Builder(AmazonActivity.this)
+                                        .setMessage(sameAccountText(res.optString("sameAs"), res.optBoolean("sameBefore")))
+                                        .setPositiveButton("Vale", null)
+                                        .setOnDismissListener(new DialogInterface.OnDismissListener() {
+                                            @Override
+                                            public void onDismiss(DialogInterface d) {
+                                                finish();
+                                            }
+                                        })
+                                        .show();
+                                return;
+                            }
+                            Toast.makeText(AmazonActivity.this, "Dentro de Amazon", Toast.LENGTH_SHORT).show();
                             finish();
                             return;
                         }
@@ -523,6 +663,22 @@ public class AmazonActivity extends Activity {
                 })
                 .setNegativeButton("Cancelar", null)
                 .show();
+    }
+
+    /** Aviso de que los dos usuarios de Súbelo han entrado con la misma cuenta de Amazon. */
+    static String sameAccountText(String other, boolean before) {
+        if (before) {
+            return "🔒 " + other + " entró en Súbelo con esta misma cuenta de Amazon, así que sabe entrar en ella y "
+                    + "vería tus copias (Amazon Fotos no tiene perfiles). Súbelo no hace copias de seguridad así (el Echo "
+                    + "sí sigue funcionando).\n\nSi la cuenta es tuya, cámbiale la contraseña en Amazon y luego, en la "
+                    + "carpeta, pulsa ☁ › «" + other + " ya no puede entrar». Si no, entra con tu propia cuenta.";
+        }
+        return "🔒 Esta cuenta de Amazon es la misma que tiene conectada " + other + ". Amazon Fotos no tiene perfiles: "
+                + "con una sola cuenta, cada uno vería las fotos del otro, así que Súbelo no hace copias de seguridad "
+                + "así (el Echo sí sigue funcionando).\n\nPara las copias, cada uno con su propia cuenta de Amazon "
+                + "(«Entrar con otra cuenta de Amazon»). Para que las dos tengan fotos ilimitadas, quien tenga Prime "
+                + "puede invitar a la otra a su «Archivo familiar» desde Amazon Fotos; dejad apagado «añadir subidas "
+                + "al Archivo familiar».";
     }
 
     private void alert(String msg) {

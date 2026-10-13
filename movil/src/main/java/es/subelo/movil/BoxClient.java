@@ -275,6 +275,19 @@ final class BoxClient {
         call("POST", "/api/logout", 4000);
     }
 
+    /**
+     * Comprueba la contraseña con el box sin tocar la sesión de este móvil (la que usan las demás
+     * pantallas y las subidas): entra y cierra al momento esa sesión nueva. Falla con 401/403 si no es.
+     */
+    void checkPassword(String user, String password) throws IOException {
+        String t = login(user, password).optString("token");
+        if (t.isEmpty()) return;
+        try {
+            new BoxClient(host, port, t, expectedFp != null ? expectedFp : seenFp).logout();
+        } catch (IOException ignored) {
+        }
+    }
+
     JSONObject info() throws IOException {
         return call("GET", "/api/info", 4000);
     }
@@ -480,10 +493,11 @@ final class BoxClient {
     }
 
     /** Pasa al box la sesión de Amazon (cookies de amazon.es); devuelve el estado y los álbumes. */
-    JSONObject amazonConnect(String cookie, String tld) throws IOException {
+    JSONObject amazonConnect(String cookie, String tld, String password) throws IOException {
         List<String[]> f = new ArrayList<String[]>();
         f.add(new String[]{"cookie", cookie});
         f.add(new String[]{"tld", tld});
+        f.add(new String[]{"password", password == null ? "" : password});
         return form("/api/amazon/connect", f);
     }
 
@@ -508,8 +522,18 @@ final class BoxClient {
         return form("/api/amazon/sync", new ArrayList<String[]>());
     }
 
-    JSONObject amazonDisconnect() throws IOException {
-        return form("/api/amazon/disconnect", new ArrayList<String[]>());
+    /** El otro usuario entró antes con esta cuenta de Amazon pero ya no sabe entrar: que vuelvan las copias. */
+    JSONObject amazonTrust(String password) throws IOException {
+        List<String[]> f = new ArrayList<String[]>();
+        f.add(new String[]{"password", password});
+        return form("/api/amazon/trust", f);
+    }
+
+    /** Olvidar la sesión de Amazon en el box (pide la contraseña de Súbelo). */
+    JSONObject amazonDisconnect(String password) throws IOException {
+        List<String[]> f = new ArrayList<String[]>();
+        f.add(new String[]{"password", password});
+        return form("/api/amazon/disconnect", f);
     }
 
     // ---------- copia de seguridad en Amazon Fotos ----------

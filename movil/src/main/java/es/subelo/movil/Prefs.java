@@ -26,6 +26,7 @@ final class Prefs {
     static void logout(Context c) {
         p(c).edit().remove("user").remove("token").apply();
         AmazonSession.forgetPassword(c); // se vuelve a guardar al entrar con la contraseña
+        AmazonSession.clear(c); // la sesión de Amazon de este usuario no se queda para el siguiente
     }
 
     /** Nuevo emparejamiento: se olvida la huella anterior. */

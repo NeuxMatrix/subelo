@@ -91,20 +91,29 @@ final class AmazonDrive {
     List<Node> children(String parent) throws IOException {
         List<Node> out = new ArrayList<Node>();
         String token = null;
+        boolean byOffset = false, byFilter = false;
         for (int page = 0; page < 200; page++) {
+            // páginas de 200: con «startToken» si Amazon lo da, y si no con «offset» (su web ya va así)
             String url = drive + "/nodes/" + enc(parent) + "/children?asset=ALL&tempLink=true&limit=200"
-                    + "&filters=" + enc("status:AVAILABLE") + (token == null ? "" : "&startToken=" + enc(token)) + "&" + V2;
+                    + "&filters=" + enc("status:AVAILABLE")
+                    + (byOffset ? "&offset=" + out.size() : token == null ? "" : "&startToken=" + enc(token)) + "&" + V2;
+            String filtered = drive + "/nodes?filters=" + enc("parents:" + parent + " AND status:AVAILABLE")
+                    + "&asset=ALL&tempLink=true&limit=200" + (byOffset ? "&offset=" + out.size() : "") + "&" + V2;
             JSONObject o;
-            try {
-                o = json(url);
-            } catch (AmazonException e) {
-                if (e.code == 401 || page > 0) throw e;
-                // por si esta versión de la web no tiene «/children»: lo mismo con un filtro
-                url = drive + "/nodes?filters=" + enc("parents:" + parent + " AND status:AVAILABLE")
-                        + "&asset=ALL&tempLink=true&limit=200" + "&" + V2;
-                o = json(url);
+            if (byFilter) {
+                o = json(filtered);
+            } else {
+                try {
+                    o = json(url);
+                } catch (AmazonException e) {
+                    if (e.code == 401 || page > 0) throw e;
+                    // por si esta versión de la web no tiene «/children»: lo mismo con un filtro
+                    byFilter = true;
+                    o = json(filtered);
+                }
             }
             JSONArray a = o.optJSONArray("data");
+            int got = a == null ? 0 : a.length();
             for (int i = 0; a != null && i < a.length(); i++) {
                 JSONObject x = a.optJSONObject(i);
                 if (x == null || x.optString("id").isEmpty()) continue;
@@ -122,7 +131,10 @@ final class AmazonDrive {
                 out.add(n);
             }
             token = o.optString("nextToken", "");
-            if (token.isEmpty()) break;
+            if (!token.isEmpty() && !byOffset && !byFilter) continue;
+            int total = o.optInt("count", -1);
+            if (got < 200 || (total >= 0 && out.size() >= total) || out.size() >= 9800) break;
+            byOffset = true;
         }
         Collections.sort(out, new Comparator<Node>() {
             @Override
