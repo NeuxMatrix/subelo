@@ -52,6 +52,8 @@ public class ExploreActivity extends Activity {
     private static final int REQ_WRITE = 2;
     private static final int REQ_MOVE = 3;
 
+    static final int FAV_YELLOW = 0xFFFFD23F;
+
     private static LruCache<String, Bitmap> thumbCache;
 
     private final ExecutorService bg = Executors.newSingleThreadExecutor();
@@ -64,7 +66,7 @@ public class ExploreActivity extends Activity {
     private String path = "";
     private BoxClient bc;
     private TextView pathText;
-    private Button downloadButton, uploadButton, folderButton, moveButton, deleteButton, renameButton, shareButton, echoButton;
+    private Button downloadButton, uploadButton, folderButton, moveButton, deleteButton, renameButton, shareButton, echoButton, favButton;
     private LinearLayout echoRow;
     private BoxClient.Listing current = new BoxClient.Listing();
     private Adapter adapter;
@@ -114,8 +116,9 @@ public class ExploreActivity extends Activity {
             @Override
             public boolean onItemLongClick(AdapterView<?> parent, View view, int pos, long id) {
                 Object e = entries.get(pos);
-                if ("virtual".equals(current.access) || BoxClient.SHARED_WITH_ME.equals(e) && path.isEmpty()) {
-                    Toast.makeText(ExploreActivity.this, "Aquí está lo que te han compartido", Toast.LENGTH_SHORT).show();
+                if ("virtual".equals(current.access) || special(e)) {
+                    Toast.makeText(ExploreActivity.this, BoxClient.FAVORITES.equals(e) ? "Aquí están tus favoritos"
+                            : "Aquí está lo que te han compartido", Toast.LENGTH_SHORT).show();
                     return true;
                 }
                 selecting = true;
@@ -135,6 +138,13 @@ public class ExploreActivity extends Activity {
             }
         });
         echoRow.addView(echoButton, Brutal.half(this));
+        favButton = Brutal.button(this, "⭐ Favorito", FAV_YELLOW, Brutal.BLACK, new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                favSelected();
+            }
+        });
+        echoRow.addView(favButton, Brutal.half(this));
         col.addView(echoRow);
 
         LinearLayout bar = new LinearLayout(this);
@@ -303,6 +313,8 @@ public class ExploreActivity extends Activity {
         String where = "DISCO:/" + Prefs.user(this) + "/" + path;
         if ("virtual".equals(current.access)) {
             where = "👥 LO QUE TE HAN COMPARTIDO";
+        } else if (current.fav()) {
+            where = "⭐ TUS FAVORITOS · SIN COPIAS: CADA FOTO SIGUE EN SU CARPETA";
         } else if (!current.own()) {
             where += "\nDE " + current.owner + ("subir".equals(current.access) ? " · PUEDES VER Y AÑADIR" : " · SOLO VER");
         } else if (!current.sharedWith.isEmpty()) {
@@ -314,13 +326,19 @@ public class ExploreActivity extends Activity {
             for (BoxClient.RemoteFile f : selectedFiles()) if (Downloader.isImage(f.name)) nPhotos++;
             downloadButton.setText("⬇ " + nFiles);
             downloadButton.setVisibility(nFiles > 0 ? View.VISIBLE : View.GONE);
-            echoButton.setText(("📺 Enviar " + (nPhotos == 1 ? "1 foto" : nPhotos + " fotos") + " al Echo").toUpperCase(java.util.Locale.getDefault()));
-            echoRow.setVisibility(nPhotos > 0 ? View.VISIBLE : View.GONE);
+            echoButton.setText(("📺 " + (nPhotos == 1 ? "1 foto" : nPhotos + " fotos") + " al Echo").toUpperCase(java.util.Locale.getDefault()));
+            echoButton.setVisibility(nPhotos > 0 ? View.VISIBLE : View.GONE);
+            boolean allFav = nFiles > 0;
+            for (BoxClient.RemoteFile f : selectedFiles()) if (!f.fav) allFav = false;
+            favButton.setText(current.fav() || allFav ? "☆ QUITAR DE FAVORITOS" : "⭐ FAVORITO");
+            favButton.setVisibility(nFiles > 0 ? View.VISIBLE : View.GONE);
+            echoRow.setVisibility(nFiles > 0 ? View.VISIBLE : View.GONE);
         } else {
             pathText.setText(where + "\n" + files.size() + " ARCHIVOS"
                     + ("virtual".equals(current.access) ? ""
-                    : current.own() ? " · MANTÉN PULSADO PARA BORRAR, MOVER O ENVIAR AL ECHO"
-                    : " · MANTÉN PULSADO PARA DESCARGAR O ENVIAR AL ECHO"));
+                    : current.fav() ? " · MANTÉN PULSADO PARA QUITAR, DESCARGAR O ENVIAR AL ECHO"
+                    : current.own() ? " · MANTÉN PULSADO PARA BORRAR, MOVER, ⭐ O ENVIAR AL ECHO"
+                    : " · MANTÉN PULSADO PARA DESCARGAR, ⭐ O ENVIAR AL ECHO"));
             downloadButton.setText("⬇ TODO");
             downloadButton.setVisibility(View.VISIBLE);
             echoRow.setVisibility(View.GONE);
@@ -334,6 +352,11 @@ public class ExploreActivity extends Activity {
         deleteButton.setVisibility(edit ? View.VISIBLE : View.GONE);
         renameButton.setVisibility(edit && selected.size() == 1 ? View.VISIBLE : View.GONE);
         adapter.notifyDataSetChanged();
+    }
+
+    /** Las carpetas especiales de la carpeta principal (no existen en el disco: ni se eligen ni se borran). */
+    private boolean special(Object e) {
+        return path.isEmpty() && (BoxClient.SHARED_WITH_ME.equals(e) || BoxClient.FAVORITES.equals(e));
     }
 
     private void toggle(String name) {
@@ -350,6 +373,7 @@ public class ExploreActivity extends Activity {
     private void onTap(int pos) {
         Object e = entries.get(pos);
         if (e instanceof String) {
+            if (selecting && special(e)) return;
             if (selecting) toggle(key(e));
             else go(path.isEmpty() ? (String) e : path + "/" + e);
             return;
@@ -359,7 +383,7 @@ public class ExploreActivity extends Activity {
             toggle(f.name);
             return;
         }
-        ViewerActivity.open(this, files, files.indexOf(f));
+        ViewerActivity.open(this, files, files.indexOf(f), current.access);
     }
 
     // ---------- subir aquí ----------
@@ -495,6 +519,26 @@ public class ExploreActivity extends Activity {
                 })
                 .setNegativeButton("Cancelar", null)
                 .show();
+    }
+
+    /** Marca lo elegido como favorito, o lo quita si ya lo era todo (o si estamos en Favoritos). */
+    private void favSelected() {
+        List<BoxClient.RemoteFile> sel = selectedFiles();
+        if (sel.isEmpty()) return;
+        boolean allFav = true;
+        final List<String> names = new ArrayList<String>();
+        for (BoxClient.RemoteFile f : sel) {
+            names.add(f.name);
+            if (!f.fav) allFav = false;
+        }
+        final boolean on = !current.fav() && !allFav;
+        String what = names.size() == 1 ? "1 archivo" : names.size() + " archivos";
+        run(on ? "⭐ " + what + " en favoritos (sin copiar nada)" : what + " fuera de favoritos (siguen en su carpeta)", new Op() {
+            @Override
+            public void go(BoxClient c) throws IOException {
+                c.fav(path, names, on);
+            }
+        });
     }
 
     private void moveSelected(final String to) {
@@ -758,8 +802,9 @@ public class ExploreActivity extends Activity {
                 label.setEllipsize(TextUtils.TruncateAt.END);
                 boolean fsel = selected.contains(name + "/");
                 cell.setBackground(cellBg(fsel ? Brutal.ORANGE : Brutal.PURPLE));
-                boolean special = path.isEmpty() && BoxClient.SHARED_WITH_ME.equals(name);
-                if (special) cell.setBackground(cellBg(Brutal.ORANGE));
+                boolean special = special(name), favs = special && BoxClient.FAVORITES.equals(name);
+                if (special) cell.setBackground(cellBg(favs ? FAV_YELLOW : Brutal.ORANGE));
+                if (favs) icon.setTextColor(Brutal.BLACK);
                 if (al != null && al.cover != null) {
                     icon.setText("");
                     label.setText("▸ " + name.toUpperCase(java.util.Locale.getDefault()) + "\n" + count(al)
@@ -767,7 +812,7 @@ public class ExploreActivity extends Activity {
                     loadThumb(img, al.cover);
                 } else {
                     icon.setText(name.toUpperCase(java.util.Locale.getDefault()));
-                    label.setText(al == null ? (special ? "▸ DE OTROS" : "▸ CARPETA")
+                    label.setText(al == null ? (favs ? "▸ SIN COPIAS" : special ? "▸ DE OTROS" : "▸ CARPETA")
                             : "▸ " + count(al) + (al.shared ? " · 👥" : ""));
                 }
                 check.setText(selecting ? (fsel ? "✓" : "") : "");
@@ -778,7 +823,7 @@ public class ExploreActivity extends Activity {
             BoxClient.RemoteFile f = (BoxClient.RemoteFile) e;
             label.setSingleLine(true);
             label.setEllipsize(TextUtils.TruncateAt.MIDDLE);
-            label.setText(f.name);
+            label.setText(f.fav && !current.fav() ? "★ " + f.name : f.name);
             boolean sel = selected.contains(f.name);
             cell.setBackground(cellBg(sel ? Brutal.ORANGE : Brutal.WHITE));
             check.setText(selecting ? (sel ? "✓" : "") : "");

@@ -51,6 +51,10 @@ final class BoxClient {
         final String name;
         final long size;
         final long mtime;
+        /** En tus favoritos. */
+        boolean fav;
+        /** En la carpeta de favoritos: de qué carpeta es («» = la principal, «Julss: Viajes» = de otro). */
+        String from;
 
         RemoteFile(String dir, String name, long size, long mtime) {
             this.dir = dir;
@@ -71,10 +75,13 @@ final class BoxClient {
     /** Carpeta especial con lo que el otro usuario te ha compartido (no existe en el disco). */
     static final String SHARED_WITH_ME = "👥 Compartido conmigo";
 
+    /** Carpeta especial con tus favoritos: no copia nada, cada foto sigue en su carpeta. */
+    static final String FAVORITES = "⭐ Favoritos";
+
     static final class Listing {
         final List<String> folders = new ArrayList<String>();
         final List<RemoteFile> files = new ArrayList<RemoteFile>();
-        /** «own» (tuya), «ver», «subir» (compartida contigo) o «virtual» (la carpeta especial). */
+        /** «own» (tuya), «ver», «subir» (compartida contigo), «virtual» (lo compartido) o «fav» (favoritos). */
         String access = "own";
         String owner;
         /** Con quién compartes esta carpeta: usuario → «ver» / «subir». */
@@ -86,6 +93,10 @@ final class BoxClient {
 
         boolean canAdd() {
             return own() || "subir".equals(access);
+        }
+
+        boolean fav() {
+            return "fav".equals(access);
         }
     }
 
@@ -290,7 +301,10 @@ final class BoxClient {
         if (f != null) {
             for (int i = 0; i < f.length(); i++) {
                 JSONObject x = f.optJSONObject(i);
-                l.files.add(new RemoteFile(path, x.optString("name"), x.optLong("size", -1), x.optLong("mtime", 0)));
+                RemoteFile rf = new RemoteFile(path, x.optString("name"), x.optLong("size", -1), x.optLong("mtime", 0));
+                rf.fav = x.optBoolean("fav");
+                if (x.has("from")) rf.from = x.optString("from");
+                l.files.add(rf);
             }
         }
         return l;
@@ -335,6 +349,15 @@ final class BoxClient {
         f.add(new String[]{"to", to});
         for (String n : names) f.add(new String[]{"name", n});
         form("/api/move", f);
+    }
+
+    /** Marca (on) o quita de favoritos. En la carpeta de favoritos solo se puede quitar. */
+    void fav(String path, List<String> names, boolean on) throws IOException {
+        List<String[]> f = new ArrayList<String[]>();
+        f.add(new String[]{"path", path});
+        f.add(new String[]{"on", on ? "1" : "0"});
+        for (String n : names) f.add(new String[]{"name", n});
+        form("/api/fav", f);
     }
 
     void rename(String path, String name, String newName) throws IOException {

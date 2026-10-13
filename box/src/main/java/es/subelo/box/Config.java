@@ -9,6 +9,8 @@ import java.io.File;
 /** Ajustes del servidor guardados en el box. */
 final class Config {
     static final int PORT = 8765;
+    /** La web para el ordenador, con un certificado de la autoridad del box (ver Tls). */
+    static final int WEB_PORT = 8766;
 
     private static Store cached;
     private static String cachedKey;

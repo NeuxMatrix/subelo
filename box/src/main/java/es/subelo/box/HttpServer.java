@@ -25,6 +25,7 @@ import java.util.ArrayList;
 import java.util.ArrayDeque;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Set;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
@@ -56,6 +57,13 @@ import javax.net.ssl.SSLSocketFactory;
  *                            La web recibe una cookie de sesión (solo en memoria: caduca a los 30 min sin usarse,
  *                            a las 12 h o al cerrar el navegador); la app, un token para la cabecera X-Subelo-Token.
  * POST /api/logout           cierra la sesión
+ * POST /api/password         password=&newPassword=[&phones=1]: cambia la tuya (cierra tus otras sesiones de la web;
+ *                            con phones=1, también las del móvil)
+ * GET  /api/box              modelo, versión, disco y si hay una versión nueva del box (para los ajustes de la web)
+ * GET  /subelo-certificado.crt   la autoridad del box, para instalarla en el ordenador (sin sesión: es pública)
+ * POST /api/fav              path=&name=…&on=1|0: marca o quita favoritos. Se ven en la carpeta especial
+ *                            «⭐ Favoritos» (path=⭐ Favoritos), que solo apunta a los archivos: no los copia,
+ *                            y ahí «borrar» solo los quita de favoritos.
  * POST /api/echo             path=&name=…: copia esas fotos a la carpeta «Echo» (va al álbum de Amazon Photos)
  * GET  /api/amazon           estado del puente con Amazon Photos (EchoSync)
  * POST /api/amazon/connect   cookie=&tld=: guarda la sesión de Amazon (entrada desde el móvil); devuelve álbumes
@@ -69,7 +77,8 @@ import javax.net.ssl.SSLSocketFactory;
  * POST /api/google/auth      path=: (web) dirección de Google para dar permiso;  POST /api/google/code url=: la de vuelta
  *
  * Todo va cifrado con HTTPS (certificado propio del box, ver Tls.java). Si alguien escribe la
- * dirección con http://, se le redirige a https://.
+ * dirección con http://, se le redirige a https://. En Config.WEB_PORT se sirve lo mismo con un
+ * certificado de la autoridad del box, que se puede instalar en el ordenador para usar la web como app.
  * Cada usuario solo ve su carpeta del disco (Fer/ o Julss/): las rutas de la API son relativas a ella.
  * Tras 5 contraseñas incorrectas desde un aparato, ese aparato queda bloqueado 5 minutos.
  */
@@ -80,8 +89,10 @@ final class HttpServer {
 
     private final Context ctx;
     private final int port;
-    private ServerSocket server;
+    private ServerSocket server, webServer;
     private SSLSocketFactory sslSockets; // != null: puerto mixto (https + redirección desde http)
+    private volatile SSLSocketFactory webSockets; // puerto del ordenador (certificado de la autoridad del box)
+    private volatile long webChecked;
     private Method wrapTls; // SSLSocketFactory.createSocket(Socket, InputStream, boolean), Android 7+
     private ExecutorService pool;
     private volatile boolean running;
@@ -116,12 +127,30 @@ final class HttpServer {
         server.bind(new InetSocketAddress(port));
         pool = Executors.newFixedThreadPool(16);
         running = true;
+        startLoop(server, false);
+        if (wrapTls != null) {
+            // el ordenador: otro puerto con un certificado que se puede instalar (para usarlo como app)
+            try {
+                webSockets = Tls.webContext(ctx.getFilesDir()).getSocketFactory();
+                webChecked = System.currentTimeMillis();
+                webServer = new ServerSocket();
+                webServer.setReuseAddress(true);
+                webServer.bind(new InetSocketAddress(port + (Config.WEB_PORT - Config.PORT)));
+                startLoop(webServer, true);
+            } catch (IOException e) {
+                Log.w(TAG, "puerto del ordenador", e);
+                webServer = null;
+            }
+        }
+    }
+
+    private void startLoop(final ServerSocket ss, final boolean web) {
         new Thread(new Runnable() {
             @Override
             public void run() {
-                acceptLoop();
+                acceptLoop(ss, web);
             }
-        }, "subelo-accept").start();
+        }, web ? "subelo-accept-web" : "subelo-accept").start();
     }
 
     synchronized void stop() {
@@ -130,18 +159,22 @@ final class HttpServer {
             if (server != null) server.close();
         } catch (IOException ignored) {
         }
+        try {
+            if (webServer != null) webServer.close();
+        } catch (IOException ignored) {
+        }
         if (pool != null) pool.shutdownNow();
     }
 
-    private void acceptLoop() {
+    private void acceptLoop(ServerSocket ss, final boolean web) {
         while (running) {
             try {
-                final Socket s = server.accept();
+                final Socket s = ss.accept();
                 s.setSoTimeout(120000);
                 pool.execute(new Runnable() {
                     @Override
                     public void run() {
-                        handle(s);
+                        handle(s, web);
                     }
                 });
             } catch (Exception e) {
@@ -151,7 +184,17 @@ final class HttpServer {
         }
     }
 
-    private void handle(Socket raw) {
+    /** Para el puerto del ordenador: si el box ha cambiado de IP, firma otro certificado (como mucho cada 30 s). */
+    private SSLSocketFactory webSockets() throws IOException {
+        long now = System.currentTimeMillis();
+        if (now - webChecked > 30000) {
+            webChecked = now;
+            webSockets = Tls.webContext(ctx.getFilesDir()).getSocketFactory();
+        }
+        return webSockets;
+    }
+
+    private void handle(Socket raw, boolean web) {
         if (sslSockets == null) {
             serve(raw);
             return;
@@ -169,7 +212,7 @@ final class HttpServer {
                 raw.close();
                 return;
             }
-            tls = (Socket) wrapTls.invoke(sslSockets, raw, new ByteArrayInputStream(new byte[]{(byte) first}), true);
+            tls = (Socket) wrapTls.invoke(web ? webSockets() : sslSockets, raw, new ByteArrayInputStream(new byte[]{(byte) first}), true);
         } catch (Exception e) {
             try {
                 raw.close();
@@ -269,6 +312,21 @@ final class HttpServer {
             send(out, 200, "text/html; charset=utf-8", readAsset("mapa.html"));
             return;
         }
+        if (path.equals("/manifest.webmanifest")) { // para instalar la web como app en el ordenador
+            send(out, 200, "application/manifest+json; charset=utf-8", ("{\"name\":\"Súbelo\",\"short_name\":\"Súbelo\","
+                    + "\"start_url\":\"/\",\"scope\":\"/\",\"display\":\"standalone\",\"background_color\":\"#111111\","
+                    + "\"theme_color\":\"#111111\",\"icons\":[{\"src\":\"/static/logo.png\",\"sizes\":\"256x256\","
+                    + "\"type\":\"image/png\",\"purpose\":\"any\"}]}").getBytes(UTF8));
+            return;
+        }
+        if (path.equals("/subelo-certificado.crt")) { // la autoridad del box, para instalarla en el ordenador
+            byte[] der = Tls.caCert(ctx.getFilesDir());
+            sendHead(out, 200, "application/x-x509-ca-cert", der.length,
+                    "Content-Disposition: attachment; filename=\"Subelo-certificado.crt\"\r\nCache-Control: no-store\r\n");
+            out.write(der);
+            out.flush();
+            return;
+        }
         if (path.startsWith("/static/")) {
             String n = path.substring(8);
             String asset = n.equals("logo.png") ? "logo.png"
@@ -297,8 +355,9 @@ final class HttpServer {
             return;
         }
         List<String> names = new ArrayList<String>();
-        String password = null;
+        String password = null, newPassword = null;
         params.remove("password"); // nunca en la URL
+        params.remove("newPassword");
         String ctype = headers.get("content-type");
         if (method.equals("POST") && ctype != null && ctype.startsWith("application/x-www-form-urlencoded")) {
             String form = new String(readAll(body, 4 * 1024 * 1024), UTF8);
@@ -309,6 +368,7 @@ final class HttpServer {
                 String v = URLDecoder.decode(kv.substring(i + 1), UTF8);
                 if (k.equals("name")) names.add(v);
                 else if (k.equals("password")) password = v;
+                else if (k.equals("newPassword")) newPassword = v;
                 else params.put(k, v);
             }
         } else if (params.containsKey("name")) {
@@ -367,6 +427,14 @@ final class HttpServer {
             error(out, 401, "Tienes que entrar con tu usuario");
             return;
         }
+        if (path.equals("/api/password")) {
+            changePassword(ip, method, user, password, newPassword, webToken, "1".equals(params.get("phones")), out);
+            return;
+        }
+        if (path.equals("/api/box")) {
+            box(st, available, out);
+            return;
+        }
         if (path.equals("/api/amazon") || path.startsWith("/api/amazon/")) {
             amazon(method, path, user, params, out);
             return;
@@ -387,6 +455,11 @@ final class HttpServer {
             shares(st, method, path, user, rel, params, out);
             return;
         }
+        // los favoritos: otra carpeta especial, que solo apunta a fotos de otras carpetas
+        if (Favorites.isVirtual(rel)) {
+            favorites(st, method, path, user, rel, names, params, headers, out);
+            return;
+        }
         // lo compartido contigo vive bajo una carpeta especial que apunta a la del otro usuario
         Shares.Access acc = Shares.resolve(ctx, user, rel);
         if (acc == null) {
@@ -403,7 +476,8 @@ final class HttpServer {
         }
         boolean reading = path.equals("/api/folders") || path.equals("/api/list") || path.equals("/api/albums")
                 || path.equals("/api/file") || path.equals("/api/thumb") || path.equals("/api/zip")
-                || path.equals("/api/exists") || path.equals("/api/places") || path.equals("/api/echo");
+                || path.equals("/api/exists") || path.equals("/api/places") || path.equals("/api/echo")
+                || path.equals("/api/fav");
         boolean adding = path.equals("/api/mkdir") || path.equals("/api/upload");
         if (!acc.own && !reading && !(adding && acc.canAdd())) {
             error(out, 403, adding ? "Esta carpeta es de " + acc.owner + " y solo te deja verla."
@@ -465,14 +539,17 @@ final class HttpServer {
                 return;
             }
             JSONArray dirs = new JSONArray();
+            if (acc.own && rel.isEmpty()) dirs.put(Favorites.VIRTUAL);
             if (acc.own && rel.isEmpty() && !Shares.incoming(ctx, user).isEmpty()) dirs.put(Shares.VIRTUAL);
             for (String n : st.listDirs(d)) dirs.put(n);
             JSONArray files = new JSONArray();
+            Set<String> favs = Favorites.of(ctx, user);
             for (Store.FileInfo f : st.listFiles(d)) {
                 JSONObject fo = new JSONObject();
                 fo.put("name", f.name);
                 fo.put("size", f.size);
                 fo.put("mtime", f.mtime);
+                if (favs.contains(dirRel + "/" + f.name)) fo.put("fav", true);
                 files.put(fo);
             }
             JSONObject o = new JSONObject();
@@ -484,16 +561,25 @@ final class HttpServer {
         } else if (path.equals("/api/file")) {
             download(st, dirRel, params, headers, method.equals("HEAD"), out);
         } else if (path.equals("/api/thumb")) {
-            String name = cleanName(params.get("name"));
-            Object d = st.dir(dirRel, false);
-            byte[] t = d == null || name == null ? null : Thumbs.get(ctx, st, d, dirRel, name);
-            if (t == null) {
-                error(out, 404, "Sin miniatura");
+            thumb(st, dirRel, cleanName(params.get("name")), out);
+        } else if (path.equals("/api/fav")) {
+            if (!method.equals("POST")) {
+                error(out, 405, "Usa POST");
                 return;
             }
-            sendHead(out, 200, "image/jpeg", t.length, "Cache-Control: max-age=604800\r\n");
-            out.write(t);
-            out.flush();
+            Object d = st.dir(dirRel, false);
+            List<String> stores = new ArrayList<String>();
+            for (String n : names) {
+                if (d != null && existingName(n) && st.fileSize(d, n) >= 0) stores.add(dirRel + "/" + n);
+            }
+            if (stores.isEmpty()) {
+                error(out, 400, "No has elegido ninguna foto");
+                return;
+            }
+            JSONObject o = new JSONObject();
+            o.put("ok", true);
+            o.put("changed", Favorites.set(ctx, user, stores, !"0".equals(params.get("on"))));
+            json(out, 200, o);
         } else if (path.equals("/api/albums")) {
             Object d = st.dir(dirRel, rel.isEmpty());
             if (d == null) {
@@ -501,6 +587,7 @@ final class HttpServer {
                 return;
             }
             JSONArray arr = new JSONArray();
+            if (acc.own && rel.isEmpty()) arr.put(favAlbum(st, user));
             if (acc.own && rel.isEmpty()) {
                 List<Shares.Share> in = Shares.incoming(ctx, user);
                 if (!in.isEmpty()) {
@@ -564,6 +651,7 @@ final class HttpServer {
                 for (String n : names) {
                     st.delete(d, n);
                     Shares.deleted(ctx, user, rel.isEmpty() ? n : rel + "/" + n);
+                    Favorites.deleted(ctx, dirRel + "/" + n);
                     ok++;
                 }
                 o.put("deleted", ok);
@@ -589,6 +677,7 @@ final class HttpServer {
                 for (String n : names) {
                     String fin = st.move(d, n, dest);
                     Shares.moved(ctx, user, rel.isEmpty() ? n : rel + "/" + n, to.isEmpty() ? fin : to + "/" + fin);
+                    Favorites.moved(ctx, dirRel + "/" + n, (to.isEmpty() ? user : user + "/" + to) + "/" + fin);
                     arr.put(fin);
                 }
                 o.put("moved", arr);
@@ -604,6 +693,7 @@ final class HttpServer {
                     return;
                 }
                 Shares.moved(ctx, user, rel.isEmpty() ? names.get(0) : rel + "/" + names.get(0), rel.isEmpty() ? nn : rel + "/" + nn);
+                Favorites.moved(ctx, dirRel + "/" + names.get(0), dirRel + "/" + nn);
                 o.put("name", nn);
             }
             o.put("ok", true);
@@ -693,6 +783,7 @@ final class HttpServer {
                 GoogleImport.reset(ctx);
             } else if (path.equals("/api/google/cancel")) {
                 GoogleImport.cancel(user);
+                GoogleImport.webForget(user);
             } else if (path.equals("/api/google/clear")) {
                 GoogleImport.clear(user);
             } else if (path.equals("/api/google/start") || path.equals("/api/google/auth")) {
@@ -742,16 +833,23 @@ final class HttpServer {
     /** Copia fotos a la carpeta «Echo» del usuario (desde la suya o desde una compartida). */
     private void echoCopy(Store st, String dirRel, String user, List<String> names, OutputStream out)
             throws IOException, JSONException {
-        Object src = st.dir(dirRel, false);
-        if (src == null) {
+        if (st.dir(dirRel, false) == null) {
             error(out, 404, "La carpeta no existe");
             return;
         }
+        List<String[]> items = new ArrayList<String[]>();
+        for (String n : names) items.add(new String[]{dirRel, n});
+        echoCopy(st, user, items, out);
+    }
+
+    /** Copia fotos a la carpeta del Echo; items: {carpeta en el disco, nombre}. */
+    private void echoCopy(Store st, String user, List<String[]> items, OutputStream out) throws IOException, JSONException {
         String echoRel = user + "/" + EchoSync.FOLDER;
         Object dst = st.dir(echoRel, true);
         int copied = 0, already = 0, skipped = 0;
         byte[] buf = new byte[256 * 1024];
-        for (String n : names) {
+        for (String[] it : items) {
+            String dirRel = it[0], n = it[1];
             if (!existingName(n) || !Thumbs.isImage(n)) {
                 skipped++;
                 continue;
@@ -760,7 +858,8 @@ final class HttpServer {
                 already++;
                 continue;
             }
-            Store.Readable rd = st.read(src, n);
+            Object src = st.dir(dirRel, false);
+            Store.Readable rd = src == null ? null : st.read(src, n);
             if (rd == null) {
                 skipped++;
                 continue;
@@ -831,6 +930,154 @@ final class HttpServer {
             a.put("cover", c);
         }
         return a;
+    }
+
+    private void thumb(Store st, String dirRel, String name, OutputStream out) throws IOException {
+        Object d = st.dir(dirRel, false);
+        byte[] t = d == null || name == null ? null : Thumbs.get(ctx, st, d, dirRel, name);
+        if (t == null) {
+            error(out, 404, "Sin miniatura");
+            return;
+        }
+        sendHead(out, 200, "image/jpeg", t.length, "Cache-Control: max-age=604800\r\n");
+        out.write(t);
+        out.flush();
+    }
+
+    /** La carpeta de favoritos como «álbum» de la carpeta principal. */
+    private JSONObject favAlbum(Store st, String user) throws IOException, JSONException {
+        JSONObject a = new JSONObject();
+        a.put("name", Favorites.VIRTUAL);
+        a.put("folders", 0);
+        a.put("virtual", true);
+        a.put("fav", true);
+        int media = 0;
+        Map<String, Map<String, Store.FileInfo>> cache = new HashMap<String, Map<String, Store.FileInfo>>();
+        for (Favorites.Fav f : Favorites.list(ctx, user)) {
+            Store.FileInfo fi = favInfo(st, cache, f);
+            if (fi == null || (!Thumbs.isImage(f.name) && !Thumbs.isVideo(f.name))) continue;
+            if (media++ == 0) {
+                JSONObject c = new JSONObject();
+                c.put("path", Favorites.VIRTUAL);
+                c.put("name", f.shown);
+                c.put("size", fi.size);
+                a.put("cover", c);
+            }
+        }
+        a.put("media", media);
+        return a;
+    }
+
+    /** Tamaño y fecha de un favorito (null si el archivo ya no está); lee cada carpeta una vez. */
+    private static Store.FileInfo favInfo(Store st, Map<String, Map<String, Store.FileInfo>> cache, Favorites.Fav f)
+            throws IOException {
+        Map<String, Store.FileInfo> m = cache.get(f.dir);
+        if (m == null) {
+            m = new HashMap<String, Store.FileInfo>();
+            Object d = st.dir(f.dir, false);
+            if (d != null) for (Store.FileInfo fi : st.listFiles(d)) m.put(fi.name, fi);
+            cache.put(f.dir, m);
+        }
+        return m.get(f.name);
+    }
+
+    /**
+     * La carpeta especial de favoritos: cada nombre apunta a un archivo de otra carpeta (tuya o que te
+     * comparten). Aquí no se sube, ni se mueve, ni se borra nada: «borrar» solo lo quita de favoritos.
+     */
+    private void favorites(Store st, String method, String path, String user, String rel, List<String> names,
+                           Map<String, String> params, Map<String, String> headers, OutputStream out)
+            throws IOException, JSONException {
+        if (!rel.equals(Favorites.VIRTUAL)) {
+            error(out, 404, "En Favoritos no hay carpetas");
+            return;
+        }
+        List<Favorites.Fav> all = Favorites.list(ctx, user);
+        Map<String, Favorites.Fav> byName = new HashMap<String, Favorites.Fav>();
+        for (Favorites.Fav f : all) byName.put(f.shown, f);
+        if (path.equals("/api/list") || path.equals("/api/folders") || path.equals("/api/albums")) {
+            JSONObject o = new JSONObject();
+            o.put("path", Favorites.VIRTUAL);
+            o.put("access", "fav");
+            o.put("owner", user);
+            if (path.equals("/api/albums")) {
+                o.put("albums", new JSONArray());
+            } else {
+                o.put("folders", new JSONArray());
+            }
+            if (path.equals("/api/list")) {
+                JSONArray files = new JSONArray();
+                Map<String, Map<String, Store.FileInfo>> cache = new HashMap<String, Map<String, Store.FileInfo>>();
+                for (Favorites.Fav f : all) {
+                    Store.FileInfo fi = favInfo(st, cache, f);
+                    if (fi == null) continue; // ya no está
+                    JSONObject fo = new JSONObject();
+                    fo.put("name", f.shown);
+                    fo.put("size", fi.size);
+                    fo.put("mtime", fi.mtime);
+                    fo.put("fav", true);
+                    fo.put("from", f.dir.equals(user) ? "" : f.dir.startsWith(user + "/") ? f.dir.substring(user.length() + 1)
+                            : f.dir.replaceFirst("/", ": ")); // lo de otro: «Julss: Viajes/Roma»
+                    files.put(fo);
+                }
+                o.put("files", files);
+            }
+            json(out, 200, o);
+            return;
+        }
+        if (path.equals("/api/file") || path.equals("/api/thumb")) {
+            Favorites.Fav f = byName.get(params.get("name"));
+            if (f == null) {
+                error(out, 404, "Ya no está en tus favoritos");
+                return;
+            }
+            if (path.equals("/api/thumb")) {
+                thumb(st, f.dir, f.name, out);
+            } else {
+                Map<String, String> p = new HashMap<String, String>(params);
+                p.put("name", f.name);
+                download(st, f.dir, p, headers, method.equals("HEAD"), out);
+            }
+            return;
+        }
+        if (path.equals("/api/zip")) {
+            List<Object[]> items = new ArrayList<Object[]>();
+            for (Favorites.Fav f : all) {
+                if (!names.isEmpty() && !names.contains(f.shown)) continue;
+                Object d = st.dir(f.dir, false);
+                if (d != null) items.add(new Object[]{d, f.name, f.shown});
+            }
+            zipItems(st, "Favoritos.zip", items, out);
+            return;
+        }
+        if (path.equals("/api/echo") || path.equals("/api/fav") || path.equals("/api/delete")) {
+            if (!method.equals("POST")) {
+                error(out, 405, "Usa POST");
+                return;
+            }
+            List<Favorites.Fav> chosen = new ArrayList<Favorites.Fav>();
+            for (String n : names) {
+                Favorites.Fav f = byName.get(n);
+                if (f != null) chosen.add(f);
+            }
+            if (path.equals("/api/echo")) {
+                List<String[]> items = new ArrayList<String[]>();
+                for (Favorites.Fav f : chosen) items.add(new String[]{f.dir, f.name});
+                echoCopy(st, user, items, out);
+                return;
+            }
+            // quitar de favoritos (también lo que llega como «borrar»: el archivo nunca se toca)
+            List<String> stores = new ArrayList<String>();
+            if (!"1".equals(params.get("on"))) for (Favorites.Fav f : chosen) stores.add(f.store);
+            int n = Favorites.set(ctx, user, stores, false);
+            JSONObject o = new JSONObject();
+            o.put("ok", true);
+            o.put("changed", n);
+            o.put("deleted", n);
+            json(out, 200, o);
+            return;
+        }
+        error(out, 403, "En Favoritos solo están tus fotos marcadas: aquí no se puede subir, mover ni cambiar nombres.");
     }
 
     /** Qué puede hacer el usuario en la carpeta que está viendo (para que el móvil y la web lo muestren). */
@@ -1060,7 +1307,13 @@ final class HttpServer {
                 if (c != null) list.add(c);
             }
         }
-        String zipName = dirRel.substring(dirRel.lastIndexOf('/') + 1) + ".zip";
+        List<Object[]> items = new ArrayList<Object[]>();
+        for (String n : list) items.add(new Object[]{d, n, n});
+        zipItems(st, dirRel.substring(dirRel.lastIndexOf('/') + 1) + ".zip", items, out);
+    }
+
+    /** Un .zip con items {carpeta (de Store), nombre, nombre dentro del .zip}. */
+    private void zipItems(Store st, String zipName, List<Object[]> items, OutputStream out) throws IOException {
         String head = "HTTP/1.1 200 OK\r\nContent-Type: application/zip\r\n"
                 + "Content-Disposition: attachment; filename*=UTF-8''" + encodeRfc5987(zipName) + "\r\n"
                 + "Cache-Control: no-store\r\nConnection: close\r\n\r\n";
@@ -1068,11 +1321,11 @@ final class HttpServer {
         ZipOutputStream zos = new ZipOutputStream(out);
         zos.setLevel(0);
         byte[] buf = new byte[256 * 1024];
-        for (String n : list) {
-            Store.Readable r = st.read(d, n);
+        for (Object[] it : items) {
+            Store.Readable r = st.read(it[0], (String) it[1]);
             if (r == null) continue;
             try {
-                ZipEntry e = new ZipEntry(n);
+                ZipEntry e = new ZipEntry((String) it[2]);
                 if (r.mtime() > 0) e.setTime(r.mtime());
                 zos.putNextEntry(e);
                 InputStream in = r.open(0);
@@ -1180,6 +1433,70 @@ final class HttpServer {
                 : "Set-Cookie: subelo_s=" + token + "; Path=/; HttpOnly; Secure; SameSite=Strict\r\nCache-Control: no-store\r\n");
         out.write(b);
         out.flush();
+    }
+
+    private void changePassword(String ip, String method, String user, String password, String newPassword, String webToken,
+                                boolean phones, OutputStream out) throws IOException, JSONException {
+        if (!method.equals("POST") || password == null || newPassword == null) {
+            error(out, 400, "Falta la contraseña");
+            return;
+        }
+        if (locked(ip)) {
+            error(out, 429, "Demasiadas contraseñas incorrectas. Espera 5 minutos.");
+            return;
+        }
+        if (!Users.check(ctx, user, password)) {
+            fail(ip);
+            error(out, 403, "La contraseña actual no es esa");
+            return;
+        }
+        clearFails(ip);
+        if (newPassword.length() < Users.MIN_LENGTH) {
+            error(out, 400, "La contraseña nueva tiene que tener al menos " + Users.MIN_LENGTH + " caracteres");
+            return;
+        }
+        Users.change(ctx, user, newPassword, webToken, phones);
+        JSONObject o = new JSONObject();
+        o.put("ok", true);
+        json(out, 200, o);
+    }
+
+    private static final java.util.concurrent.atomic.AtomicBoolean CHECKING = new java.util.concurrent.atomic.AtomicBoolean();
+
+    /** Datos del box para los ajustes de la web; si hace rato que no se mira GitHub, lo mira de fondo. */
+    private void box(Store st, boolean available, OutputStream out) throws IOException, JSONException {
+        JSONObject o = new JSONObject();
+        o.put("model", Build.MODEL);
+        o.put("version", Updater.installedName(ctx));
+        o.put("versionCode", Updater.installedCode(ctx));
+        o.put("storage", st == null ? JSONObject.NULL : st.describe());
+        o.put("available", available);
+        o.put("free", available ? st.free() : -1);
+        o.put("total", available ? st.total() : -1);
+        long last = Updater.lastCheck(ctx);
+        Updater.Release r = Updater.cached(ctx);
+        o.put("checked", last);
+        List<String> ips = Net.localIps();
+        o.put("webPort", port + (Config.WEB_PORT - Config.PORT));
+        o.put("webUrl", webServer == null || ips.isEmpty() ? JSONObject.NULL : "https://" + ips.get(0) + ":" + (port + (Config.WEB_PORT - Config.PORT)));
+        o.put("caThumbprint", Tls.caThumbprint(ctx.getFilesDir()));
+        if (r != null) o.put("update", r.name);
+        if (System.currentTimeMillis() - last > 10 * 60 * 1000L && CHECKING.compareAndSet(false, true)) {
+            Thread t = new Thread(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        Updater.checkThrottled(ctx);
+                    } finally {
+                        CHECKING.set(false);
+                    }
+                }
+            }, "subelo-update-check");
+            t.setDaemon(true);
+            t.start();
+        }
+        o.put("checking", CHECKING.get());
+        json(out, 200, o);
     }
 
     private synchronized boolean locked(String ip) {

@@ -4,6 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Súbelo · Disco de casa</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/static/logo.png">
+<meta name="theme-color" content="#111111">
 <script>
   // Modo oscuro: lo que elijas se recuerda en este navegador; si no eliges, sigue al sistema.
   (function () {
@@ -61,7 +64,18 @@
   #crumbs a:hover { background: var(--orange); color: var(--black); }
   #accessNote { margin: -4px 0 12px; font-size: .78rem; background: var(--lilac); border: 2px solid var(--ink); padding: 5px 10px; display: inline-block; }
   .grid-wrap { padding: 16px 16px 130px; }
-  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 18px; }
+  .grid { --tile: 230px; display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--tile), 1fr)); gap: 18px; }
+  .grid.size-s { --tile: 160px; } .grid.size-l { --tile: 340px; }
+  .grid.fit .tile:not(.folder) .img { background: var(--black); }
+  .grid.fit .tile:not(.folder) .img img { object-fit: contain; }
+  .viewbar { margin-top: 12px; align-items: center; }
+  .viewbar input[type=search], .viewbar select { font: 700 .8rem "Space Mono", monospace; padding: 8px 10px; border: var(--b); background: var(--surface); color: var(--ink); border-radius: 0; height: 40px; }
+  .viewbar input[type=search] { flex: 1; min-width: 170px; max-width: 320px; text-transform: none; }
+  .viewbar select { cursor: pointer; text-transform: uppercase; }
+  .viewbar button { padding: 8px 11px; box-shadow: 3px 3px 0 var(--ink); }
+  .viewbar button.on { background: var(--orange); color: var(--black); }
+  #shown { font-size: .74rem; }
+  .tile .star { position: absolute; top: 6px; right: 6px; z-index: 2; font-size: 1.1rem; line-height: 1; background: var(--black); color: #FFD23F; border: 2px solid var(--paper); padding: 3px 5px; }
   .tile { background: var(--surface); border: var(--b); box-shadow: var(--sh); cursor: pointer; position: relative; transition: transform .06s, box-shadow .06s; min-width: 0; }
   .tile:hover { transform: translate(-2px, -2px); box-shadow: 7px 7px 0 var(--ink); }
   .tile.sel { background: var(--orange); color: var(--black); box-shadow: 7px 7px 0 var(--purple); }
@@ -94,13 +108,19 @@
 
   /* visor */
   #viewer { display: none; position: fixed; inset: 0; background: var(--black); z-index: 30; align-items: center; justify-content: center; }
-  #viewer img, #viewer video { max-width: calc(100vw - 40px); max-height: calc(100vh - 140px); border: 4px solid var(--paper); box-shadow: 10px 10px 0 var(--purple); }
+  #vbody { display: flex; align-items: center; justify-content: center; }
+  #viewer img, #viewer video { max-width: calc(100vw - 16px); max-height: calc(100vh - 96px); border: 3px solid var(--paper); margin-top: 30px; }
+  #viewer img { cursor: zoom-in; }
+  #viewer.zoom #vbody { position: absolute; top: 58px; left: 0; right: 0; bottom: 0; overflow: auto; display: block; text-align: center; }
+  #viewer.zoom img { max-width: none; max-height: none; margin: 0; cursor: zoom-out; }
+  #viewer:fullscreen img, #viewer:fullscreen video { max-height: calc(100vh - 70px); }
   #viewer .vtop { position: absolute; top: 0; left: 0; right: 0; display: flex; gap: 8px; align-items: center; padding: 10px 14px; background: var(--black); border-bottom: 3px solid var(--paper); flex-wrap: wrap; }
   #viewer .vtop span { flex: 1; min-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--paper); font-size: .8rem; }
   #viewer .vtop button { box-shadow: 3px 3px 0 var(--paper); padding: 7px 10px; font-size: .76rem; }
   #viewer .nav { position: absolute; top: 50%; transform: translateY(-50%); font-size: 1.6rem; padding: 10px 16px; }
   #viewer .nav:active { transform: translate(5px, calc(-50% + 5px)); }
-  #vinfo { position: absolute; bottom: 10px; left: 0; right: 0; text-align: center; color: var(--paper); font-size: .72rem; }
+  #viewer.zoom #vinfo, #viewer.zoom .nav { display: none; }
+  #vinfo { position: absolute; bottom: 6px; left: 0; right: 0; text-align: center; color: var(--paper); font-size: .72rem; }
   #prev { left: 14px; } #next { right: 18px; }
 
   /* páginas: echo, google */
@@ -116,6 +136,14 @@
   .note { font-size: .72rem; line-height: 1.6; }
   ol.steps { padding-left: 20px; line-height: 1.5; margin: 6px 0 4px; }
   ol.steps li { margin-bottom: 6px; }
+  label.check { display: flex; gap: 10px; align-items: flex-start; margin-top: 14px; font-size: .9rem; cursor: pointer; }
+  label.check input { width: 20px; height: 20px; flex: none; margin: 0; accent-color: var(--purple); }
+  .rows > div { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 10px 0; border-bottom: 2px solid var(--ink); }
+  .rows > div:last-child { border-bottom: 0; }
+  .rows > div span { flex: 1; min-width: 180px; font-weight: 700; }
+  .rows button { box-shadow: 3px 3px 0 var(--ink); padding: 6px 10px; font-size: .74rem; }
+  #aTheme button.on { background: var(--orange); color: var(--black); }
+  #aGSlot:not(:empty) { margin-top: 12px; }
   #secMapa iframe { display: block; width: 100%; height: calc(100vh - 70px); border: 0; }
 
   /* ventanas */
@@ -151,10 +179,12 @@
   #pwErr { color: var(--red); font-weight: 700; margin-top: 10px; min-height: 1.2em; }
 
   @media (max-width: 700px) {
+    header { position: static; } /* en el móvil la cabecera ocupa mucho: que se vaya al bajar */
     h1 { font-size: 1.4rem; } .top img { width: 34px; height: 34px; }
     .right { margin-left: 0; width: 100%; } #info { max-width: 100%; flex: 1; }
     nav { width: 100%; } nav a { flex: 1; text-align: center; padding: 7px 4px; font-size: .7rem; }
-    .grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 12px; }
+    .grid { --tile: 150px; gap: 12px; } .grid.size-s { --tile: 100px; } .grid.size-l { --tile: 300px; }
+    .viewbar input[type=search] { max-width: none; width: 100%; flex-basis: 100%; }
     .ptitle { font-size: 1.7rem; }
   }
 </style>
@@ -169,6 +199,7 @@
       <a href="#mapa" data-s="mapa">◉ Mapa</a>
       <a href="#echo" data-s="echo">📺 Echo</a>
       <a href="#google" data-s="google">⬇ Google Fotos</a>
+      <a href="#ajustes" data-s="ajustes">⚙ Ajustes</a>
     </nav>
     <div class="right">
       <div id="info" class="mono">Conectando…</div>
@@ -192,6 +223,20 @@
       <button id="dlAll">⬇ Carpeta .zip</button>
       <button id="share" class="alt" hidden>👥 Compartir</button>
     </div>
+    <div class="bar viewbar" id="viewbar">
+      <input type="search" id="q" placeholder="🔍 Buscar por nombre" autocomplete="off">
+      <select id="kind" title="Qué enseñar">
+        <option value="">Fotos y vídeos</option><option value="foto">Solo fotos</option><option value="video">Solo vídeos</option><option value="fav">Solo ⭐ favoritos</option>
+      </select>
+      <select id="sort" title="Orden">
+        <option value="name">Nombre A-Z</option><option value="name-r">Nombre Z-A</option>
+        <option value="date-r">Más nuevas primero</option><option value="date">Más antiguas primero</option>
+        <option value="size-r">Más grandes primero</option><option value="size">Más pequeñas primero</option>
+      </select>
+      <select id="tsize" title="Tamaño"><option value="s">Pequeñas</option><option value="m">Medianas</option><option value="l">Grandes</option></select>
+      <button id="fit" title="Ver las fotos enteras, sin recortar">▭ Enteras</button>
+      <span id="shown" class="mono"></span>
+    </div>
   </div>
   <div class="grid-wrap">
     <div class="grid" id="grid"></div>
@@ -200,6 +245,7 @@
   <div id="selbar" hidden>
     <span class="n mono" id="selN"></span>
     <button id="dlSel" class="main">⬇ Descargar</button>
+    <button id="favSel">⭐ Favorito</button>
     <button id="echoSel" class="alt">📺 Al Echo</button>
     <button id="ren">✎ Renombrar</button>
     <button id="mv">↦ Mover</button>
@@ -236,6 +282,7 @@
   <p class="lead">Eliges las fotos en Google Fotos (también las de un álbum: búscalo por su nombre) y el box las copia a la carpeta del disco que digas, con su fecha original.</p>
   <div class="card" id="gSetup" hidden>
     <div class="tag">g // preparar google (una vez)</div>
+    <div id="gSetupForm">
     <div>Google pide que cada app tenga su propia «llave». Se hace una vez y sirve para Fer y para Julss:</div>
     <ol class="steps">
       <li>Entra en <a href="https://console.cloud.google.com/" target="_blank" rel="noopener">console.cloud.google.com</a> con cualquiera de tus cuentas y crea un proyecto («Subelo»).</li>
@@ -245,7 +292,8 @@
     </ol>
     <input type="text" id="gClient" placeholder="ID de cliente (….apps.googleusercontent.com) o el JSON descargado" autocomplete="off">
     <input type="password" id="gSecret" placeholder="Secreto de cliente (GOCSPX-…)" autocomplete="off">
-    <div class="bar"><button id="gSave" class="main">Guardar</button></div>
+    <div class="bar"><button id="gSave" class="main">Guardar la llave</button><button id="gSaveNo" hidden>Cancelar</button></div>
+    </div>
   </div>
   <div class="card" id="gMain" hidden>
     <div class="tag">⬇ // google fotos</div>
@@ -254,12 +302,13 @@
     <div class="err" id="gErr" hidden></div>
     <div id="gPaste" hidden style="margin-top:14px">
       <ol class="steps">
-        <li>En la pestaña que se ha abierto, elige la cuenta de Google y da permiso a Súbelo.</li>
-        <li>Google te lleva a una página que <b>no carga</b> (su dirección empieza por <span class="mono">http://127.0.0.1</span>). Es normal.</li>
-        <li>Copia la dirección de esa pestaña y pégala aquí:</li>
+        <li>En la pestaña de Google que se ha abierto, elige la cuenta y da permiso a Súbelo («Continuar»).</li>
+        <li>Al final Google te deja en una página que dice <b>«No se puede acceder a este sitio»</b>. <b>No es un error</b>: es lo que tiene que pasar.</li>
+        <li>En esa pestaña copia la dirección de arriba (empieza por <span class="mono">http://127.0.0.1:53682</span>), vuelve a esta pestaña y pégala aquí:</li>
       </ol>
-      <input type="url" id="gUrl" placeholder="http://127.0.0.1:53682/?state=…&amp;code=…" autocomplete="off">
-      <div class="bar"><button id="gUrlOk" class="main">Continuar</button><a class="btn" id="gAuthLink" target="_blank" rel="noopener">Abrir otra vez Google</a><button id="gPasteNo">Cancelar</button></div>
+      <input type="url" id="gUrl" placeholder="Pega aquí: http://127.0.0.1:53682/?state=…&amp;code=…" autocomplete="off">
+      <div class="bar"><button id="gUrlOk" class="main">Continuar</button><button id="gClip" hidden>📋 Pegar</button><a class="btn" id="gAuthLink" target="_blank" rel="noopener">Abrir otra vez Google</a><button id="gPasteNo">Cancelar</button></div>
+      <p class="note mono">Pégala en unos minutos: después Google la da por caducada y hay que volver a pulsar «Elegir fotos».</p>
     </div>
     <div class="bar" id="gBar">
       <button id="gPick" class="main">Elegir fotos en Google Fotos</button>
@@ -269,7 +318,75 @@
     </div>
   </div>
   <p class="note mono">Google quita la ubicación a las fotos que da a otras apps: estas no saldrán en el mapa. Súbelo no guarda ningún permiso de Google: solo puede leer las fotos que elijas, y solo mientras se copian. Si ya están en la carpeta (mismo nombre y tamaño), se saltan.</p>
-  <button id="gReset" hidden>Cambiar la llave de Google</button>
+  <button id="gReset" hidden>⚙ Cambiar la llave de Google</button>
+</section>
+
+<!-- ============ AJUSTES ============ -->
+<section id="secAjustes" class="page" hidden>
+  <h2 class="ptitle">Ajustes</h2>
+  <p class="lead">Lo demás se hace en la tele, en «Súbelo Servidor»: elegir el disco, borrar una contraseña olvidada e instalar las versiones nuevas del box.</p>
+
+  <div class="card">
+    <div class="tag">🔑 // mi contraseña</div>
+    <div>La que usas para entrar como <b id="aUser"></b>, aquí y en la app del móvil.</div>
+    <form id="aPwForm" autocomplete="on">
+      <input type="text" id="aPwUser" autocomplete="username" hidden>
+      <input type="password" id="aPwOld" placeholder="Contraseña de ahora" autocomplete="current-password">
+      <input type="password" id="aPwNew" placeholder="Contraseña nueva" autocomplete="new-password">
+      <input type="password" id="aPwNew2" placeholder="Repite la nueva" autocomplete="new-password">
+      <label class="check"><input type="checkbox" id="aPwPhones"> Cerrar también la sesión en los móviles (habrá que volver a entrar en la app)</label>
+      <div class="err" id="aPwErr" hidden></div>
+      <div class="bar"><button type="submit" class="main">Cambiar la contraseña</button></div>
+    </form>
+    <p class="note mono">Esta web vuelve a pedir la contraseña tras 30 minutos sin usarla, a las 12 horas, al cerrar el navegador y si el box se reinicia. Si el móvil pide huella o contraseña al abrir la app, allí sigue valiendo la de antes hasta que la cambies en «04 // Seguridad».</p>
+  </div>
+
+  <div class="card">
+    <div class="tag">⬇ // google fotos</div>
+    <div class="big" id="aGState">Mirando el box…</div>
+    <div id="aGSlot"></div>
+    <div class="bar" id="aGBar">
+      <button id="aGChange" class="alt">Cambiar la llave</button>
+      <button id="aGOff" class="danger">Quitar la llave</button>
+      <a class="btn" href="#google">Traer fotos de Google</a>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="tag">📺 // fotos al echo</div>
+    <div class="big" id="aEcho">Mirando el box…</div>
+    <div class="bar"><a class="btn alt" href="#echo">Ir a Echo</a></div>
+  </div>
+
+  <div class="card">
+    <div class="tag">👥 // carpetas compartidas</div>
+    <div id="aShares" class="rows">Mirando el box…</div>
+  </div>
+
+  <div class="card">
+    <div class="tag">◐ // aspecto</div>
+    <div class="bar" id="aTheme"><button data-t="light">☀ Claro</button><button data-t="dark">☾ Oscuro</button><button data-t="">Como el sistema</button></div>
+  </div>
+
+  <div class="card">
+    <div class="tag">💻 // como app en el ordenador</div>
+    <div class="big" id="aApp">Para usar Súbelo como una app de Windows, sin el aviso de «La conexión no es privada», instala una vez el certificado del box:</div>
+    <ol class="steps">
+      <li><a class="btn main" href="/subelo-certificado.crt" download>⬇ Descargar el certificado</a></li>
+      <li>Ábrelo (doble clic) y pulsa «Instalar certificado…» › «Usuario actual» › «Siguiente».</li>
+      <li>Elige «Colocar todos los certificados en el siguiente almacén» › «Examinar…» › <b>«Entidades de certificación raíz de confianza»</b> › «Aceptar» › «Siguiente» › «Finalizar».</li>
+      <li>Windows pregunta «¿Desea instalar este certificado?» y enseña una «Huella digital (sha1)». Comprueba que es <b class="mono" id="aThumb">…</b> (la tele enseña los 8 primeros) y pulsa «Sí».</li>
+      <li>Cierra Chrome del todo y abre <a id="aWebUrl" href="#">la dirección del ordenador</a>: ya no sale el aviso.</li>
+      <li>Borra la app de Súbelo que hiciste antes. Desde esa dirección, en el menú ⋮ de Chrome: «Transmitir, guardar y compartir» › «Instalar página como aplicación» (o el icono de instalar en la barra de direcciones).</li>
+    </ol>
+    <p class="note mono">Este certificado solo vale para direcciones de casa (192.168…, 10…, 172.16…): no sirve para hacerse pasar por ninguna web de internet. Conviene darle al box una IP fija en el router («reserva DHCP»): si cambia, cambia la dirección de la app.</p>
+  </div>
+
+  <div class="card">
+    <div class="tag">▣ // el box</div>
+    <div class="info mono" id="aBox">Mirando el box…</div>
+    <div class="big" id="aUpd" style="margin-top:12px"></div>
+  </div>
 </section>
 
 <div id="drop">Suelta para subir ⬆</div>
@@ -279,11 +396,13 @@
 <div id="viewer">
   <div class="vtop">
     <span id="vname" class="mono"></span>
+    <button id="vfav" title="Favorito">☆</button>
     <button id="vdl" class="main">⬇</button>
     <button id="vecho" class="alt">📺 Al Echo</button>
     <button id="vren">✎</button>
     <button id="vmv">↦ Mover</button>
     <button id="vdel" class="danger">🗑</button>
+    <button id="vfull" title="Pantalla completa">⛶</button>
     <button id="vclose">✕</button>
   </div>
   <button class="nav" id="prev">‹</button><div id="vbody"></div><button class="nav" id="next">›</button>
@@ -345,10 +464,16 @@ const join = (a, b) => a ? a + '/' + b : b;
 const fmt = b => b >= 1e9 ? (b / 1e9).toFixed(1) + ' GB' : b >= 1e6 ? (b / 1e6).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1e3)) + ' KB';
 const plural = (n, one, many) => n + ' ' + (n === 1 ? one : many);
 const VIRTUAL = '👥 Compartido conmigo';
+const FAV = '⭐ Favoritos'; // carpeta especial del box: apunta a las fotos, no las copia
 const IDLE_MS = 30 * 60 * 1000; // igual que el box: sin usar la web, se vuelve a pedir la contraseña
 
 let user = null, section = null;
-let path = '', files = [], folders = [];
+let path = '', files = [], folders = [];   // lo que se ve (con el filtro y el orden)
+let allFiles = [], allFolders = [];          // lo que hay
+// cómo se ven las carpetas (se recuerda en este navegador)
+const view = {kind: '', sort: 'name', size: 'm', fit: false};
+try { Object.assign(view, JSON.parse(localStorage.getItem('subelo-vista') || '{}')); } catch (e) {}
+function saveView() { try { localStorage.setItem('subelo-vista', JSON.stringify(view)); } catch (e) {} }
 const selected = new Set(), selDirs = new Set();
 let access = 'own', owner = null, sharedWith = {};
 
@@ -448,30 +573,32 @@ async function start() {
     $('who').textContent = '👤 ' + user;
     $('nav').hidden = $('who').hidden = $('logout').hidden = false;
     $('info').textContent = info.available
-      ? (info.storage || '') + (info.free >= 0 ? ' · libre ' + fmt(info.free) + ' de ' + fmt(info.total) : '')
+      ? (info.free >= 0 ? 'Libre ' + fmt(info.free) + ' de ' + fmt(info.total) : 'Disco listo')
       : 'El disco no está disponible en el box.';
+    $('info').title = info.storage || '';
     route();
   } catch (e) { if (!(e instanceof Expired)) $('info').textContent = e.message; }
 }
 
-// ---------- secciones (la dirección: #fotos/carpeta, #mapa, #echo, #google) ----------
+// ---------- secciones (la dirección: #fotos/carpeta, #mapa, #echo, #google, #ajustes) ----------
 function route() {
   if (!user) return;
   const h = location.hash.slice(1);
-  const s = h.startsWith('fotos') || !h ? 'fotos' : ['mapa', 'echo', 'google'].includes(h) ? h : 'fotos';
-  if (s !== section) { section = s; stopPolls(); }
+  const s = h.startsWith('fotos') || !h ? 'fotos' : ['mapa', 'echo', 'google', 'ajustes'].includes(h) ? h : 'fotos';
+  if (s !== section) { section = s; stopPolls(); if (s !== 'ajustes') gKeyEdit = false; }
   document.querySelectorAll('nav a').forEach(a => a.classList.toggle('on', a.dataset.s === s));
   $('secFotos').hidden = s !== 'fotos'; $('secMapa').hidden = s !== 'mapa';
-  $('secEcho').hidden = s !== 'echo'; $('secGoogle').hidden = s !== 'google';
+  $('secEcho').hidden = s !== 'echo'; $('secGoogle').hidden = s !== 'google'; $('secAjustes').hidden = s !== 'ajustes';
   if (s === 'fotos') {
     const p = h.startsWith('fotos/') ? decodeURIComponent(h.slice(6)) : '';
-    if (p !== path) { path = p; selected.clear(); selDirs.clear(); }
+    if (p !== path) { path = p; selected.clear(); selDirs.clear(); $('q').value = ''; }
     load();
   } else if (s === 'mapa') {
     const src = '/mapa.html?embed=1&tema=' + (document.documentElement.getAttribute('data-theme') === 'dark' ? 'oscuro' : 'claro');
     if ($('mapFrame').getAttribute('src') !== src) $('mapFrame').setAttribute('src', src);
   } else if (s === 'echo') echoLoad();
-  else if (s === 'google') gLoad();
+  else if (s === 'google') { $('gSetup').appendChild($('gSetupForm')); gLoad(); }
+  else if (s === 'ajustes') aLoad();
 }
 addEventListener('hashchange', route);
 function go(p) { location.hash = '#fotos/' + enc(p); }
@@ -483,6 +610,7 @@ function crumbs() {
   const add = (label, p) => { const a = document.createElement('a'); a.textContent = label; a.onclick = () => go(p); c.appendChild(a); };
   add('■ ' + (user || 'Disco'), '');
   parts.forEach((x, i) => { c.appendChild(document.createTextNode('›')); add(x, parts.slice(0, i + 1).join('/')); });
+  if (path === FAV) c.lastChild.textContent = '⭐ Favoritos';
 }
 let loadN = 0;
 async function load() {
@@ -490,7 +618,7 @@ async function load() {
   try {
     const j = await api('/api/list?path=' + enc(path));
     if (n !== loadN) return;
-    files = j.files; folders = j.folders;
+    allFiles = j.files; allFolders = j.folders;
     access = j.access || 'own'; owner = j.owner || null; sharedWith = j.sharedWith || {};
     applyAccess(); crumbs(); render();
     covers(n);
@@ -501,7 +629,7 @@ async function load() {
 }
 // portadas y número de fotos de las carpetas (llega después: puede tardar un poco)
 async function covers(n) {
-  if (!folders.length) return;
+  if (!allFolders.length) return;
   let j;
   try { j = await api('/api/albums?path=' + enc(path)); } catch (e) { return; }
   if (n !== loadN) return;
@@ -523,6 +651,7 @@ async function covers(n) {
       t.querySelector('.img').appendChild(b);
     }
     if (a.owner) t.querySelector('.meta').textContent = 'De ' + a.owner + (a.mode === 'subir' ? ' · ver y añadir' : ' · solo ver');
+    if (a.name === FAV && !path && !a.media) t.querySelector('.meta').textContent = 'Aún vacía';
   });
 }
 // qué se puede hacer aquí: lo tuyo todo; lo compartido contigo, ver (y añadir si te dejan)
@@ -530,24 +659,41 @@ function canAdd() { return access === 'own' || access === 'subir'; }
 function applyAccess() {
   const own = access === 'own';
   $('upFiles').hidden = $('upFolder').hidden = $('mk').hidden = !canAdd();
-  $('dlAll').hidden = $('selAll').hidden = access === 'virtual';
+  $('dlAll').hidden = $('selAll').hidden = $('viewbar').hidden = access === 'virtual';
   $('share').hidden = !own || !path;
   const who = Object.keys(sharedWith);
   const note = access === 'virtual' ? '👥 Lo que te han compartido'
+    : access === 'fav' ? '⭐ Aquí no hay copias: cada foto sigue en su carpeta. Quitarla de favoritos no la borra.'
     : !own ? 'De ' + owner + (access === 'subir' ? ' · puedes ver y añadir fotos' : ' · solo ver')
     : who.length ? '👥 Compartida con ' + who.map(w => w + (sharedWith[w] === 'subir' ? ' (ver y añadir)' : ' (ver)')).join(', ') : '';
   $('accessNote').textContent = note; $('accessNote').hidden = !note;
 }
 function selecting() { return selected.size + selDirs.size > 0; }
+// filtro (nombre, fotos o vídeos, favoritos) y orden de lo que hay en la carpeta
+const special = f => !path && (f === VIRTUAL || f === FAV);
+function applyView() {
+  const q = $('q').value.trim().toLowerCase(), k = view.kind;
+  folders = allFolders.filter(f => special(f) || !q || f.toLowerCase().includes(q));
+  if (view.sort === 'name-r') folders = folders.filter(special).concat(folders.filter(f => !special(f)).reverse());
+  files = allFiles.filter(f => (!q || f.name.toLowerCase().includes(q))
+    && (k === 'foto' ? isImg(f.name) : k === 'video' ? isVid(f.name) : k === 'fav' ? f.fav : true));
+  const key = view.sort.split('-')[0], dir = view.sort.endsWith('-r') ? -1 : 1;
+  const byName = (a, b) => a.name.localeCompare(b.name, 'es', {numeric: true, sensitivity: 'base'});
+  files.sort((a, b) => dir * (key === 'date' ? (a.mtime - b.mtime) || byName(a, b) : key === 'size' ? (a.size - b.size) || byName(a, b) : byName(a, b)));
+  $('shown').textContent = files.length !== allFiles.length ? 'Enseñando ' + files.length + ' de ' + plural(allFiles.length, 'archivo', 'archivos') : '';
+  $('kind').value = view.kind; $('sort').value = view.sort; $('tsize').value = view.size; $('fit').classList.toggle('on', !!view.fit);
+}
 function render() {
+  applyView();
   const g = $('grid'); g.innerHTML = '';
+  g.className = 'grid size-' + view.size + (view.fit ? ' fit' : '');
   folders.forEach(f => {
-    const virt = !path && f === VIRTUAL;
+    const virt = special(f), fav = virt && f === FAV;
     const t = document.createElement('div');
     t.className = 'tile folder' + (selDirs.has(f) ? ' sel' : '') + (virt ? ' virtual' : '');
     t.dataset.name = f;
-    t.innerHTML = '<input type="checkbox" title="Elegir"><div class="img">' + (virt ? '👥' : '▤') + '</div><div class="name"></div><div class="meta mono">' + (virt ? 'De otros' : 'Carpeta') + '</div>';
-    t.querySelector('.name').textContent = virt ? 'Compartido conmigo' : f;
+    t.innerHTML = '<input type="checkbox" title="Elegir"><div class="img">' + (fav ? '⭐' : virt ? '👥' : '▤') + '</div><div class="name"></div><div class="meta mono">' + (fav ? 'Sin copias' : virt ? 'De otros' : 'Carpeta') + '</div>';
+    t.querySelector('.name').textContent = fav ? 'Favoritos' : virt ? 'Compartido conmigo' : f;
     const cb = t.querySelector('input'); cb.checked = selDirs.has(f);
     if (virt || access !== 'own') cb.hidden = true;
     cb.onclick = ev => { ev.stopPropagation(); cb.checked ? selDirs.add(f) : selDirs.delete(f); t.classList.toggle('sel', cb.checked); updateSel(); };
@@ -566,15 +712,19 @@ function render() {
       t.querySelector('.img').appendChild(img);
       if (isVid(f.name)) t.insertAdjacentHTML('beforeend', '<div class="play">▶</div>');
     }
+    if (f.fav && access !== 'fav') t.insertAdjacentHTML('beforeend', '<div class="star" title="Favorito">★</div>');
     t.querySelector('.name').textContent = f.name;
-    t.querySelector('.meta').textContent = fmt(f.size) + (f.mtime ? ' · ' + new Date(f.mtime).toLocaleDateString() : '');
+    t.querySelector('.meta').textContent = (access === 'fav' && f.from ? f.from + ' · ' : '') + fmt(f.size) + (f.mtime ? ' · ' + new Date(f.mtime).toLocaleDateString() : '');
     const cb = t.querySelector('input'); cb.checked = selected.has(f.name);
     cb.onclick = ev => { ev.stopPropagation(); cb.checked ? selected.add(f.name) : selected.delete(f.name); t.classList.toggle('sel', cb.checked); updateSel(); };
     t.onclick = () => { if (selecting()) cb.click(); else openViewer(i); };
     g.appendChild(t);
   });
   $('empty').hidden = folders.length + files.length > 0;
-  $('empty').textContent = access === 'virtual' ? 'Nadie te ha compartido nada todavía' : canAdd() ? 'Carpeta vacía · arrastra aquí fotos o carpetas' : 'Carpeta vacía';
+  $('empty').textContent = allFiles.length + allFolders.length > files.length + folders.length ? 'Nada con ese filtro'
+    : access === 'virtual' ? 'Nadie te ha compartido nada todavía'
+    : access === 'fav' ? 'Aún no tienes favoritos. Marca fotos con su casilla y pulsa «⭐ Favorito», o pulsa ☆ al verlas en grande.'
+    : canAdd() ? 'Carpeta vacía · arrastra aquí fotos o carpetas' : 'Carpeta vacía';
   updateSel();
 }
 function updateSel() {
@@ -585,6 +735,9 @@ function updateSel() {
   $('echoSel').hidden = ![...selected].some(isImg);
   $('ren').hidden = !own || n !== 1;
   $('mv').hidden = $('del').hidden = !own;
+  const names = [...selected], allFav = names.length > 0 && names.every(n => (allFiles.find(f => f.name === n) || {}).fav);
+  $('favSel').hidden = names.length === 0 || access === 'virtual';
+  $('favSel').textContent = allFav ? '☆ Quitar de favoritos' : '⭐ Favorito';
   $('selAll').textContent = files.length && selected.size === files.length ? '☐ Quitar todo' : '☑ Elegir todo';
 }
 function clearSel() { selected.clear(); selDirs.clear(); render(); }
@@ -606,7 +759,30 @@ $('dlSel').onclick = () => {
   if (names.length === 1) { location.href = fileUrl(names[0], true); return; }
   zip(names);
 };
-$('dlAll').onclick = () => { if (files.length) zip([]); else toast('En esta carpeta no hay archivos (las subcarpetas no van en el .zip).'); };
+$('dlAll').onclick = () => {
+  if (!files.length) { toast('En esta carpeta no hay archivos (las subcarpetas no van en el .zip).'); return; }
+  zip(files.length === allFiles.length ? [] : files.map(f => f.name)); // con filtro, solo lo que se ve
+};
+// ver: buscar, filtrar, ordenar, tamaño
+$('q').oninput = () => render();
+$('kind').onchange = e => { view.kind = e.target.value; saveView(); render(); };
+$('sort').onchange = e => { view.sort = e.target.value; saveView(); render(); };
+$('tsize').onchange = e => { view.size = e.target.value; saveView(); render(); };
+$('fit').onclick = () => { view.fit = !view.fit; saveView(); render(); };
+// favoritos: el box solo apunta a dónde está cada foto, no la copia
+async function setFav(names, on) {
+  try { await post('/api/fav', [['path', path], ['on', on ? '1' : '0'], ...names.map(n => ['name', n])]); }
+  catch (e) { fail(e); return false; }
+  allFiles.forEach(f => { if (names.includes(f.name)) f.fav = on; });
+  if (access === 'fav' && !on) allFiles = allFiles.filter(f => !names.includes(f.name));
+  toast(on ? '⭐ ' + plural(names.length, 'añadida', 'añadidas') + ' a Favoritos (sin copiar nada)'
+    : '☆ ' + plural(names.length, 'quitada', 'quitadas') + ' de Favoritos (el archivo sigue en su carpeta)');
+  return true;
+}
+$('favSel').onclick = async () => {
+  const names = [...selected], on = !names.every(n => (allFiles.find(f => f.name === n) || {}).fav);
+  if (await setFav(names, on)) { selected.clear(); selDirs.clear(); render(); }
+};
 $('mk').onclick = async () => {
   const n = prompt('Nombre de la nueva carpeta:');
   if (!n || !n.trim()) return;
@@ -741,18 +917,53 @@ function openViewer(i) {
   vi = i; const f = files[i];
   if (!isImg(f.name) && !isVid(f.name)) { location.href = fileUrl(f.name, true); return; }
   const own = access === 'own';
+  $('viewer').classList.remove('zoom');
   $('vname').textContent = f.name + ' · ' + (i + 1) + '/' + files.length;
-  $('vinfo').textContent = fmt(f.size) + (f.mtime ? ' · ' + new Date(f.mtime).toLocaleString() : '');
+  $('vinfo').textContent = (access === 'fav' && f.from ? 'En ' + f.from + ' · ' : '') + fmt(f.size) + (f.mtime ? ' · ' + new Date(f.mtime).toLocaleString() : '');
+  favBtn(f);
   $('vecho').hidden = !isImg(f.name);
   $('vren').hidden = $('vmv').hidden = $('vdel').hidden = !own;
   const b = $('vbody'); b.innerHTML = '';
   const el = document.createElement(isVid(f.name) ? 'video' : 'img');
   if (isVid(f.name)) { el.controls = true; el.autoplay = true; }
   el.src = fileUrl(f.name, false);
+  if (!isVid(f.name)) el.onclick = e => zoom(e, el);
   b.appendChild(el);
   $('viewer').style.display = 'flex';
 }
-function closeViewer() { $('vbody').innerHTML = ''; $('viewer').style.display = 'none'; vi = -1; }
+function closeViewer() {
+  $('vbody').innerHTML = ''; $('viewer').style.display = 'none'; vi = -1;
+  if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+}
+// clic en la foto: a lo ancho de la pantalla (las verticales) o a su tamaño real; otro clic, entera
+function zoom(e, img) {
+  const v = $('viewer'), b = $('vbody');
+  if (v.classList.toggle('zoom')) {
+    const r = img.getBoundingClientRect(), fx = (e.clientX - r.left) / r.width, fy = (e.clientY - r.top) / r.height;
+    const tall = img.naturalWidth / img.naturalHeight < innerWidth / innerHeight;
+    img.style.width = (tall ? b.clientWidth : Math.max(img.naturalWidth, b.clientWidth)) + 'px';
+    b.scrollLeft = fx * img.offsetWidth - b.clientWidth / 2; b.scrollTop = fy * img.offsetHeight - b.clientHeight / 2;
+  } else img.style.width = '';
+}
+$('vfull').onclick = () => {
+  if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  else if ($('viewer').requestFullscreen) $('viewer').requestFullscreen().catch(() => toast('El navegador no deja pantalla completa'));
+};
+function favBtn(f) {
+  $('vfav').textContent = f.fav ? '★' : '☆'; $('vfav').title = f.fav ? 'Quitar de favoritos' : 'Añadir a favoritos';
+  $('vfav').className = f.fav ? 'main' : '';
+  $('vfav').hidden = access === 'virtual';
+}
+$('vfav').onclick = async () => {
+  const f = files[vi]; if (!f) return;
+  const name = f.name, old = vi;
+  if (!await setFav([name], !f.fav)) return;
+  render();
+  const i = files.findIndex(x => x.name === name);
+  if (i >= 0) { vi = i; favBtn(files[i]); $('vname').textContent = name + ' · ' + (i + 1) + '/' + files.length; }
+  else if (files.length) openViewer(Math.min(old, files.length - 1)); // ya no se ve aquí (en Favoritos o con el filtro)
+  else closeViewer();
+};
 function step(d) {
   let i = vi;
   do { i += d; } while (i >= 0 && i < files.length && !isImg(files[i].name) && !isVid(files[i].name));
@@ -932,18 +1143,19 @@ $('albumLinkOk').onclick = async () => {
 $('albumNo').onclick = () => modal('albumBox', false);
 
 // ---------- google fotos ----------
-let g = null, gAuthUrl = null;
+let g = null, gKeyEdit = false, gBusy = false;
 function gJob() { return g && g.job; }
 async function gLoad() {
   try { g = await api('/api/google'); } catch (e) { if (!(e instanceof Expired)) { $('gMain').hidden = false; $('gState').textContent = '✖ ' + e.message; } return; }
   if (section !== 'google') return;
   const configured = !!g.configured, j = g.job, state = j ? j.state : '';
-  const active = state === 'picking' || state === 'downloading', waiting = !!gAuthUrl && !active;
+  const active = state === 'picking' || state === 'downloading', waiting = !!g.waiting && !active;
+  if (waiting) $('gAuthLink').href = g.waiting.authUrl;
   $('gSetup').hidden = configured; $('gMain').hidden = !configured; $('gReset').hidden = !configured;
   $('gPaste').hidden = !waiting;
   const where = j ? 'DISCO:/' + user + '/' + j.dest : '';
   let err = null;
-  if (waiting) $('gState').textContent = 'Esperando a que des permiso en Google…';
+  if (waiting) $('gState').textContent = 'Falta un paso: da permiso en la pestaña de Google y pega aquí la dirección a la que te lleva.';
   else if (state === 'picking') $('gState').textContent = 'Elige las fotos en Google Fotos y pulsa «Hecho».\nIrán a ' + where;
   else if (state === 'downloading') $('gState').textContent = 'Copiando ' + j.done + ' de ' + j.total + '…' + (j.current ? '\n' + j.current : '') + '\nA ' + where;
   else if (j) {
@@ -951,6 +1163,7 @@ async function gLoad() {
       + '\n' + plural(j.copied, 'copiada', 'copiadas') + (j.already ? ' · ' + j.already + ' ya estaban' : '') + (j.failed ? ' · ' + j.failed + ' sin copiar' : '') + '\nEn ' + where;
     err = j.error;
   } else $('gState').textContent = 'Elige en Google Fotos las fotos que quieras traer: primero te pregunto a qué carpeta del disco van.';
+  if (gLastErr) err = gLastErr;
   $('gErr').textContent = err ? '✖ ' + err : ''; $('gErr').hidden = !err;
   $('gProg').hidden = state !== 'downloading';
   if (state === 'downloading') $('gProg').firstElementChild.style.width = Math.round(100 * j.done / Math.max(1, j.total)) + '%';
@@ -965,46 +1178,157 @@ $('gSave').onclick = async () => {
   if (id.startsWith('{')) { // han pegado el JSON que descarga Google Cloud
     try { const o = JSON.parse(id), c = o.installed || o.web || o; id = c.client_id || ''; if (!secret) secret = c.client_secret || ''; } catch (e) {}
   }
-  try { await post('/api/google/setup', [['client', id], ['secret', secret]]); $('gClient').value = $('gSecret').value = ''; toast('✔ Llave de Google guardada en el box'); gLoad(); }
-  catch (e) { fail(e); }
+  try {
+    await post('/api/google/setup', [['client', id], ['secret', secret]]);
+    $('gClient').value = $('gSecret').value = ''; gKeyEdit = false;
+    toast('✔ Llave de Google guardada en el box');
+    if (section === 'ajustes') aGoogle(); else gLoad();
+  } catch (e) { fail(e); }
 };
-$('gReset').onclick = async () => {
-  if (!confirm('¿Borrar del box la llave de Google? Para volver a traer fotos tendrás que pegar otra.')) return;
-  try { await post('/api/google/reset', []); gAuthUrl = null; gLoad(); } catch (e) { fail(e); }
-};
+$('gSaveNo').onclick = () => { gKeyEdit = false; $('gClient').value = $('gSecret').value = ''; aGoogle(); };
+$('gReset').onclick = () => { gKeyEdit = true; location.hash = '#ajustes'; };
 $('gPick').onclick = () => {
   choose('google', '¿Dónde guardo las fotos de Google?', '⬇ Traer aquí', 'Google', [], async to => {
     const w = window.open('about:blank', '_blank'); // ahora, que es un clic: si no, el navegador la bloquea
     let j;
     try { j = await post('/api/google/auth', [['path', to]]); }
     catch (e) { if (w) w.close(); throw e; }
-    gAuthUrl = j.authUrl; $('gAuthLink').href = gAuthUrl; $('gUrl').value = '';
-    if (w) w.location.href = gAuthUrl; else toast('El navegador ha bloqueado la pestaña: pulsa «Abrir otra vez Google».');
+    gLastErr = null; $('gUrl').value = '';
+    if (w) w.location.href = j.authUrl; else toast('El navegador ha bloqueado la pestaña: pulsa «Abrir otra vez Google».');
     gLoad();
   });
 };
+let gLastErr = null;
 $('gUrlOk').onclick = async () => {
   const url = $('gUrl').value.trim();
   if (!url) { $('gUrl').focus(); return; }
+  if (gBusy) return;
+  gBusy = true; $('gUrlOk').disabled = true;
   try {
-    await post('/api/google/code', [['url', url]]);
-    gAuthUrl = null; toast('✔ Permiso dado. Ahora elige las fotos.'); gLoad();
-  } catch (e) { fail(e); }
+    const j = await post('/api/google/code', [['url', url]]);
+    gLastErr = null; $('gUrl').value = '';
+    toast('✔ Permiso dado. Ahora elige las fotos en Google Fotos.');
+    if (j.job && j.job.pickerUri) window.open(j.job.pickerUri + '/autoclose', '_blank');
+  } catch (e) { if (e instanceof Expired) return; gLastErr = e.message; }
+  finally { gBusy = false; $('gUrlOk').disabled = false; }
+  gLoad();
 };
-$('gPasteNo').onclick = () => { gAuthUrl = null; gLoad(); };
+// al pegar la dirección, seguir solo
+$('gUrl').addEventListener('paste', () => setTimeout(() => { if (/code=/.test($('gUrl').value)) $('gUrlOk').click(); }, 50));
+if (navigator.clipboard && navigator.clipboard.readText) {
+  $('gClip').hidden = false;
+  $('gClip').onclick = async () => {
+    try { $('gUrl').value = (await navigator.clipboard.readText()).trim(); }
+    catch (e) { toast('El navegador no me deja leer lo copiado: pégala en la casilla con Ctrl+V (o mantén pulsado › Pegar).'); $('gUrl').focus(); return; }
+    if ($('gUrl').value) $('gUrlOk').click();
+  };
+}
+// al volver de la pestaña de Google, la casilla lista para pegar
+addEventListener('focus', () => {
+  if (section === 'google' && !$('gPaste').hidden && !$('gUrl').value) { $('gUrl').focus(); $('gUrl').scrollIntoView({block: 'center'}); }
+});
+$('gPasteNo').onclick = async () => { gLastErr = null; try { await post('/api/google/cancel', []); } catch (e) { fail(e); } gLoad(); };
 $('gOpenPicker').onclick = () => { const j = gJob(); if (j && j.pickerUri) window.open(j.pickerUri + '/autoclose', '_blank'); };
 $('gCancel').onclick = async () => { try { await post('/api/google/cancel', []); gLoad(); } catch (e) { fail(e); } };
 $('gView').onclick = () => { const j = gJob(); if (j) go(j.dest); };
 
+// ---------- ajustes ----------
+function aLoad() {
+  $('aUser').textContent = $('aPwUser').value = user;
+  aGoogle(); aEcho(); aShares(); aBox(); themeLabel();
+}
+async function aGoogle() {
+  let j;
+  try { j = await api('/api/google'); } catch (e) { if (!(e instanceof Expired)) $('aGState').textContent = '✖ ' + e.message; return; }
+  if (section !== 'ajustes') return;
+  const editing = !j.configured || gKeyEdit;
+  $('aGState').textContent = !j.configured ? 'Falta la llave de Google: sin ella no se pueden traer fotos. Se pone una vez y sirve para los dos.'
+    : gKeyEdit ? 'Pega la llave nueva: sustituye a la de ahora (' + j.clientId.split('-')[0] + '…).'
+    : '✔ Llave puesta: ' + j.clientId.split('-')[0] + '…apps.googleusercontent.com';
+  if (editing) $('aGSlot').appendChild($('gSetupForm')); else if ($('aGSlot').firstChild) $('gSetup').appendChild($('gSetupForm'));
+  $('gSaveNo').hidden = !(j.configured && gKeyEdit);
+  $('aGBar').hidden = editing;
+  if (editing && gKeyEdit) $('gClient').focus();
+}
+$('aGChange').onclick = () => { gKeyEdit = true; aGoogle(); };
+$('aGOff').onclick = async () => {
+  if (!confirm('¿Quitar del box la llave de Google? Para volver a traer fotos tendrás que pegar otra.')) return;
+  try { await post('/api/google/reset', []); aGoogle(); } catch (e) { fail(e); }
+};
+async function aEcho() {
+  let o;
+  try { o = await api('/api/amazon'); } catch (e) { if (!(e instanceof Expired)) $('aEcho').textContent = '✖ ' + e.message; return; }
+  $('aEcho').textContent = !o.connected ? 'Sin conectar con Amazon Photos (se conecta desde la app del móvil).'
+    : o.expired ? '⚠ La sesión de Amazon ha caducado: vuelve a entrar desde la app del móvil.'
+    : !o.album ? 'Conectado con Amazon Photos. Falta elegir el álbum del Echo.'
+    : '✔ Mandando tu carpeta «Echo» al álbum «' + o.album.name + '».';
+}
+const MODE = {ver: 'puede verla y descargar', subir: 'puede verla y añadir fotos'};
+async function aShares() {
+  let j;
+  try { j = await api('/api/shares'); } catch (e) { if (!(e instanceof Expired)) $('aShares').textContent = '✖ ' + e.message; return; }
+  const box = $('aShares'); box.innerHTML = '';
+  const row = (text, buttons) => {
+    const d = document.createElement('div'), sp = document.createElement('span');
+    sp.textContent = text; d.appendChild(sp);
+    buttons.forEach(([label, cls, fn]) => { const b = document.createElement('button'); b.textContent = label; if (cls) b.className = cls; b.onclick = fn; d.appendChild(b); });
+    box.appendChild(d);
+  };
+  j.mine.forEach(x => row('«' + x.path + '»: ' + x.with + ' ' + (MODE[x.mode] || x.mode), [
+    ['▦ Abrir', '', () => go(x.path)],
+    ['✕ Dejar de compartir', 'danger', async () => {
+      if (!confirm('¿Dejar de compartir «' + x.path + '» con ' + x.with + '?')) return;
+      try { await post('/api/unshare', [['path', x.path], ['with', x.with]]); aShares(); } catch (e) { fail(e); }
+    }]]));
+  j.withMe.forEach(x => row(x.owner + ' te comparte «' + x.name + '» (' + (x.mode === 'subir' ? 'puedes añadir fotos' : 'solo ver y descargar') + ')', [
+    ['▦ Abrir', '', () => go(x.path)]]));
+  if (!j.mine.length && !j.withMe.length) box.textContent = 'No compartes ninguna carpeta. Para compartir una, ábrela en Mis fotos y pulsa «👥 Compartir».';
+}
+async function aBox(again) {
+  let o;
+  try { o = await api('/api/box'); } catch (e) { if (!(e instanceof Expired)) $('aBox').textContent = '✖ ' + e.message; return; }
+  if (section !== 'ajustes') return;
+  $('aBox').textContent = ['Súbelo en ' + o.model + ' · versión ' + o.version,
+    'Disco: ' + (o.available ? o.storage : 'no disponible'),
+    o.free >= 0 ? 'Libre: ' + fmt(o.free) + ' de ' + fmt(o.total) : ''].filter(Boolean).join('\n');
+  $('aUpd').textContent = o.update ? '⬆ Hay una versión nueva (' + o.update + '). Para instalarla, en la tele abre «Súbelo Servidor» y pulsa «Buscar actualizaciones».'
+    : o.checking ? 'Mirando si hay una versión nueva…'
+    : o.checked ? '✔ Es la última versión.' : 'No he podido mirar si hay una versión nueva (¿tiene internet el box?).';
+  if (o.checking && !again) setTimeout(() => aBox(true), 4000);
+  $('aThumb').textContent = o.caThumbprint || '?';
+  if (o.webUrl) { $('aWebUrl').href = o.webUrl; $('aWebUrl').textContent = o.webUrl; }
+  if (location.port === String(o.webPort)) $('aApp').textContent = '✔ Estás en la dirección del ordenador. Si Chrome aún enseña «No seguro» junto a la dirección, falta instalar el certificado:';
+}
+
 // ---------- tema ----------
-function themeLabel() { $('theme').textContent = $('theme2').textContent = document.documentElement.getAttribute('data-theme') === 'dark' ? '☀ Claro' : '☾ Oscuro'; }
-$('theme').onclick = () => {
-  const t = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+function setTheme(t) {
+  try { t ? localStorage.setItem('subelo-tema', t) : localStorage.removeItem('subelo-tema'); } catch (e) {}
+  if (!t) t = window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
   document.documentElement.setAttribute('data-theme', t);
-  try { localStorage.setItem('subelo-tema', t); } catch (e) {}
   themeLabel();
   if (section === 'mapa') route(); // el mapa también cambia
+}
+function themeLabel() {
+  $('theme').textContent = $('theme2').textContent = document.documentElement.getAttribute('data-theme') === 'dark' ? '☀ Claro' : '☾ Oscuro';
+  let saved = null; try { saved = localStorage.getItem('subelo-tema'); } catch (e) {}
+  document.querySelectorAll('#aTheme button').forEach(b => b.classList.toggle('on', b.dataset.t === (saved || '')));
+}
+document.querySelectorAll('#aTheme button').forEach(b => { b.onclick = () => setTheme(b.dataset.t); });
+$('aPwForm').onsubmit = async e => {
+  e.preventDefault();
+  const err = m => { $('aPwErr').textContent = m; $('aPwErr').hidden = !m; };
+  const old = $('aPwOld').value, nw = $('aPwNew').value;
+  if (!old) { err('Escribe la contraseña de ahora.'); return; }
+  if (nw.length < minLen) { err('La nueva tiene que tener al menos ' + minLen + ' caracteres.'); return; }
+  if (nw !== $('aPwNew2').value) { err('Las dos contraseñas nuevas no coinciden.'); return; }
+  const phones = $('aPwPhones').checked;
+  try {
+    await post('/api/password', [['password', old], ['newPassword', nw], ['phones', phones ? '1' : '0']]);
+    $('aPwOld').value = $('aPwNew').value = $('aPwNew2').value = ''; $('aPwPhones').checked = false; err('');
+    toast('✔ Contraseña cambiada. ' + (phones ? 'Los móviles tendrán que volver a entrar.' : 'Los móviles siguen conectados.'));
+  } catch (e2) { if (!(e2 instanceof Expired)) err('✖ ' + e2.message); }
 };
+$('theme').onclick = () => setTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
 $('theme2').onclick = () => $('theme').onclick();
 themeLabel();
 start();

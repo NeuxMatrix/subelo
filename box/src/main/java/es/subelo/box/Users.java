@@ -99,6 +99,31 @@ final class Users {
         }
     }
 
+    /**
+     * Cambia la contraseña (ya comprobada la actual). Cierra las demás sesiones de la web de ese
+     * usuario, menos la de keepWeb, y si phones también las del móvil.
+     */
+    static synchronized void change(Context c, String user, String password, String keepWeb, boolean phones) throws IOException {
+        Properties p = load(c);
+        byte[] salt = new byte[16];
+        RANDOM.nextBytes(salt);
+        p.setProperty(user + ".salt", hex(salt));
+        p.setProperty(user + ".hash", hex(pbkdf2(password, salt)));
+        save(c, p, "usuarios.properties");
+        String keep = keepWeb == null || keepWeb.isEmpty() ? null : key(keepWeb);
+        for (Iterator<Map.Entry<String, Web>> it = WEB.entrySet().iterator(); it.hasNext(); ) {
+            Map.Entry<String, Web> e = it.next();
+            if (e.getValue().user.equals(user) && !e.getKey().equals(keep)) it.remove();
+        }
+        if (phones) {
+            Properties s = loadSessions(c);
+            for (Iterator<Map.Entry<Object, Object>> it = s.entrySet().iterator(); it.hasNext(); ) {
+                if (String.valueOf(it.next().getValue()).startsWith(user + "|")) it.remove();
+            }
+            save(c, s, "sesiones.properties");
+        }
+    }
+
     // ---------- sesiones ----------
 
     static synchronized String newWebSession(String user) {

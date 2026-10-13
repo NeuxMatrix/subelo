@@ -42,22 +42,33 @@ public class ViewerActivity extends Activity {
     private BoxClient bc;
     private FrameLayout stage;
     private TextView title, message;
-    private Button echo;
+    private Button echo, star;
+    /** Permisos de la carpeta de donde vienen las fotos («own», «ver», «subir», «fav»), o null si no se sabe (mapa). */
+    private String access;
     private GestureDetector gestures;
     private VideoProxy proxy;
 
     static void open(Context c, List<BoxClient.RemoteFile> files, int index) {
-        ArrayList<String> dirs = new ArrayList<String>(), names = new ArrayList<String>();
+        open(c, files, index, null);
+    }
+
+    /** access: los permisos de la carpeta (con ellos se ve la ⭐ y se ocultan mover y borrar donde no se puede). */
+    static void open(Context c, List<BoxClient.RemoteFile> files, int index, String access) {
+        ArrayList<String> dirs = new ArrayList<String>(), names = new ArrayList<String>(), froms = new ArrayList<String>();
         long[] sizes = new long[files.size()], mtimes = new long[files.size()];
+        boolean[] favs = new boolean[files.size()];
         for (int i = 0; i < files.size(); i++) {
             dirs.add(files.get(i).dir);
             names.add(files.get(i).name);
             sizes[i] = files.get(i).size;
             mtimes[i] = files.get(i).mtime;
+            favs[i] = files.get(i).fav;
+            froms.add(files.get(i).from);
         }
         c.startActivity(new Intent(c, ViewerActivity.class)
                 .putStringArrayListExtra("dirs", dirs).putStringArrayListExtra("names", names)
-                .putExtra("sizes", sizes).putExtra("mtimes", mtimes).putExtra("index", index));
+                .putExtra("sizes", sizes).putExtra("mtimes", mtimes).putExtra("index", index)
+                .putExtra("favs", favs).putStringArrayListExtra("froms", froms).putExtra("access", access));
     }
 
     @Override
@@ -72,7 +83,15 @@ public class ViewerActivity extends Activity {
             finish();
             return;
         }
-        for (int i = 0; i < names.size(); i++) files.add(new BoxClient.RemoteFile(dirs.get(i), names.get(i), sizes[i], mtimes[i]));
+        boolean[] favs = in.getBooleanArrayExtra("favs");
+        ArrayList<String> froms = in.getStringArrayListExtra("froms");
+        access = in.getStringExtra("access");
+        for (int i = 0; i < names.size(); i++) {
+            BoxClient.RemoteFile f = new BoxClient.RemoteFile(dirs.get(i), names.get(i), sizes[i], mtimes[i]);
+            if (favs != null && i < favs.length) f.fav = favs[i];
+            if (froms != null && i < froms.size()) f.from = froms.get(i);
+            files.add(f);
+        }
         index = savedInstanceState != null ? savedInstanceState.getInt("index") : in.getIntExtra("index", 0);
         bc = BoxClient.fromPrefs(this);
 
@@ -101,20 +120,35 @@ public class ViewerActivity extends Activity {
                 Toast.makeText(ViewerActivity.this, "Descargando a la galería (carpeta Subelo)", Toast.LENGTH_SHORT).show();
             }
         });
-        top.addView(Brutal.button(this, "↦", Brutal.PAPER, Brutal.BLACK, new View.OnClickListener() {
+        star = Brutal.button(this, "☆", ExploreActivity.FAV_YELLOW, Brutal.BLACK, new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                toggleFav();
+            }
+        });
+        top.addView(star, Brutal.spaced(this, -2, -2, 0));
+        if (access == null) star.setVisibility(View.GONE); // desde el mapa no sabemos si ya lo es
+        boolean editable = access == null || "own".equals(access); // mover y borrar: solo lo tuyo
+        Button move = Brutal.button(this, "↦", Brutal.PAPER, Brutal.BLACK, new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 if (files.isEmpty()) return;
                 startActivityForResult(new Intent(ViewerActivity.this, FolderActivity.class)
                         .putExtra(FolderActivity.EXTRA_PICK, files.get(index).dir), REQ_MOVE);
             }
-        }), Brutal.spaced(this, -2, -2, 0));
-        top.addView(Brutal.button(this, "🗑", 0xFFE5322D, Brutal.SNOW, new View.OnClickListener() {
+        });
+        top.addView(move, Brutal.spaced(this, -2, -2, 0));
+        Button delete = Brutal.button(this, "🗑", 0xFFE5322D, Brutal.SNOW, new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 confirmDelete();
             }
-        }), Brutal.spaced(this, -2, -2, 0));
+        });
+        top.addView(delete, Brutal.spaced(this, -2, -2, 0));
+        if (!editable) {
+            move.setVisibility(View.GONE);
+            delete.setVisibility(View.GONE);
+        }
         top.addView(dl, Brutal.spaced(this, -2, -2, 0));
         root.addView(top, new FrameLayout.LayoutParams(-1, -2, Gravity.TOP));
 
@@ -221,6 +255,61 @@ public class ViewerActivity extends Activity {
                 .show();
     }
 
+    /**
+     * Marca o quita la ⭐. En la carpeta de favoritos solo se quita, y la foto sale del visor (pero sigue
+     * en su carpeta: no se borra nada).
+     */
+    private void toggleFav() {
+        if (files.isEmpty() || bc == null) return;
+        final BoxClient.RemoteFile f = files.get(index);
+        final boolean inFavs = "fav".equals(access), on = !inFavs && !f.fav;
+        star.setEnabled(false);
+        bg.execute(new Runnable() {
+            @Override
+            public void run() {
+                String err = null;
+                try {
+                    bc.fav(f.dir, Collections.singletonList(f.name), on);
+                } catch (IOException e) {
+                    err = e.getMessage();
+                }
+                final String msg = err;
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        star.setEnabled(true);
+                        if (msg != null) {
+                            Toast.makeText(ViewerActivity.this, msg, Toast.LENGTH_LONG).show();
+                            return;
+                        }
+                        f.fav = on;
+                        Toast.makeText(ViewerActivity.this, on ? "⭐ En favoritos (sin copiar nada)"
+                                : "Fuera de favoritos (sigue en su carpeta)", Toast.LENGTH_SHORT).show();
+                        if (inFavs) drop(f);
+                        else if (files.indexOf(f) == index) showStar(f);
+                    }
+                });
+            }
+        });
+    }
+
+    private void showStar(BoxClient.RemoteFile f) {
+        boolean lit = f.fav || "fav".equals(access);
+        star.setText(lit ? "★" : "☆");
+    }
+
+    /** Quita la foto del visor (borrada, movida o fuera de favoritos) y enseña la siguiente. */
+    private void drop(BoxClient.RemoteFile f) {
+        int i = files.indexOf(f);
+        if (i >= 0) files.remove(i);
+        if (files.isEmpty()) {
+            finish();
+            return;
+        }
+        if (index >= files.size()) index = files.size() - 1;
+        show();
+    }
+
     /** Borra (to == null) o mueve la foto y la quita del visor. */
     private void change(final BoxClient.RemoteFile f, final String to) {
         bg.execute(new Runnable() {
@@ -242,14 +331,7 @@ public class ViewerActivity extends Activity {
                             return;
                         }
                         Toast.makeText(ViewerActivity.this, to == null ? "Borrada" : "Movida", Toast.LENGTH_SHORT).show();
-                        int i = files.indexOf(f);
-                        if (i >= 0) files.remove(i);
-                        if (files.isEmpty()) {
-                            finish();
-                            return;
-                        }
-                        if (index >= files.size()) index = files.size() - 1;
-                        show();
+                        drop(f);
                     }
                 });
             }
@@ -265,7 +347,9 @@ public class ViewerActivity extends Activity {
 
     private void show() {
         final BoxClient.RemoteFile f = files.get(index);
-        title.setText((index + 1) + "/" + files.size() + "  " + f.name);
+        title.setText((index + 1) + "/" + files.size() + "  " + f.name
+                + (f.from == null ? "" : "  · " + (f.from.isEmpty() ? "carpeta principal" : f.from)));
+        showStar(f);
         echo.setVisibility(Downloader.isImage(f.name) ? View.VISIBLE : View.INVISIBLE);
         stage.removeAllViews();
         message.setText("");

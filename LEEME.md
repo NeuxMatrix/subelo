@@ -14,6 +14,13 @@ No hace falta root ni Internet: todo va por tu red local.
 
 ## Novedades: álbumes, carpetas con portada y mapa
 
+- **2.17: ajustes en la web, favoritos, fotos más grandes y app para el ordenador.**
+  - **⚙ Ajustes** (web): cambiar tu contraseña (pide la actual; puedes cerrar también la sesión de los móviles), poner, cambiar o quitar la llave de Google, ver lo que compartes, el modo oscuro y la versión del box.
+  - **⭐ Favoritos** (web y móvil): elige fotos o vídeos y pulsa «⭐ Favorito» (en el visor, la estrella). Salen juntos en la carpeta «⭐ Favoritos» sin copiar nada: cada foto sigue en su carpeta, y si la mueves o le cambias el nombre el favorito la sigue. Vale también con lo que te comparten. En Favoritos, «Quitar de favoritos» nunca borra la foto.
+  - **Fotos más grandes en la web**: tamaño de las miniaturas (S, M, L), «▭ Enteras» para verlas sin recortar, y en el visor clic para ampliar y ⛶ para pantalla completa.
+  - **Buscar, filtrar y ordenar** (web): por nombre, solo fotos, solo vídeos o solo favoritos, y ordenar por nombre, fecha o tamaño. «Descargar» baja solo lo que se ve.
+  - **Google Fotos desde la web**: al pegar la dirección de la página que no carga, sigue solo.
+  - **Como app en el ordenador**: nueva dirección `https://<ip-del-box>:8766` con un certificado que instalas una vez (ver «6. Desde un ordenador»). Así Chrome o Edge la pueden instalar como app sin avisos.
 - **Web del ordenador renovada** (2.16): ahora hace lo mismo que la app del móvil, con cuatro apartados arriba: **Mis fotos** (carpetas con portada y número de fotos, subir, arrastrar, elegir para descargar, mandar al Echo, renombrar, mover, borrar y compartir), **Mapa**, **Echo** (estado, cambiar de álbum, repasar, desconectar) y **Google Fotos** (traer fotos eligiéndolas en Google). La contraseña se vuelve a pedir tras 30 minutos sin usarla, a las 12 horas, al cerrar el navegador y si el box se reinicia.
 - **Subir álbumes enteros** (móvil, «▤ Subir álbumes enteros»): eliges uno o varios álbumes de la galería (Cámara, WhatsApp, Descargas…) y cada uno va a su propia carpeta del disco, dentro de la carpeta de destino. Lo que ya estaba subido se salta, así que repetirlo solo sube lo nuevo. En Android 14, si al dar permiso elegiste «Seleccionar fotos», solo se ven esas: cámbialo a «Permitir todo».
 - **Mis fotos por carpetas** (móvil): cada carpeta muestra una foto de portada y cuántas fotos tiene.
@@ -145,7 +152,19 @@ Arriba hay cuatro apartados:
 - **Mis fotos**: carpetas con su portada y cuántas fotos tienen. Clic en una foto o vídeo para verlo en grande (flechas del teclado o deslizar para pasar). «Subir fotos», «Subir carpeta» (mantiene sus subcarpetas) o **arrastra** fotos y carpetas a la ventana. Marca las casillas (o «Elegir todo») y abajo sale la barra para **Descargar**, **📺 Al Echo**, **Renombrar**, **Mover** y **Borrar**; el visor tiene los mismos botones. «Carpeta .zip» baja la carpeta entera y «👥 Compartir» la comparte con el otro usuario.
 - **Mapa**: el mismo mapa de fotos que en el móvil.
 - **Echo**: si Amazon está conectado, cuántas fotos hay en el álbum, «Repasar ahora», «Cambiar de álbum» y «Desconectar Amazon». Para entrar en Amazon la primera vez hace falta la app del móvil (Amazon solo deja iniciar sesión en su propia página).
-- **Google Fotos**: «Elegir fotos» pregunta la carpeta y abre Google en otra pestaña. Elige la cuenta y da permiso; Google te lleva a una página que no carga (empieza por `http://127.0.0.1`), es normal: copia esa dirección, pégala en Súbelo y pulsa «Continuar». Se abre el selector de Google Fotos y el box copia lo que elijas. La llave de Google también se puede poner aquí.
+- **Google Fotos**: «Elegir fotos» pregunta la carpeta y abre Google en otra pestaña. Elige la cuenta y da permiso; Google te lleva a una página que no carga (empieza por `http://127.0.0.1`), es normal: copia esa dirección y pégala en Súbelo (o pulsa «📋 Pegar»): sigue solo. Se abre el selector de Google Fotos y el box copia lo que elijas.
+- **⚙ Ajustes**: tu contraseña, la llave de Google, lo que compartes, el modo oscuro, la versión del box y cómo usar Súbelo como app del ordenador.
+
+### Como app en el ordenador (sin avisos de «no es privada»)
+
+Si instalas la web como app (Chrome o Edge › ⋮ › «Instalar Súbelo») usando la dirección del puerto 8765, el aviso del certificado hace que se abra fuera de la app. Para eso está la dirección del puerto **8766**, con un certificado que tu ordenador aprende a reconocer una sola vez:
+
+1. En la web, entra en **⚙ Ajustes › 💻 Como app en el ordenador** y pulsa «Descargar el certificado» (`subelo-certificado.crt`).
+2. Ábrelo › «Instalar certificado…» › «Usuario actual» › «Colocar todos los certificados en el siguiente almacén» › «Examinar» › **«Entidades de certificación raíz de confianza»** › Aceptar › Siguiente › Finalizar. Windows avisa de que vas a instalar un certificado: comprueba que la **huella** que enseña coincide con la de Ajustes y con la que sale en la tele («CERTIFICADO DEL ORDENADOR») y pulsa «Sí».
+3. Cierra Chrome del todo y abre `https://<ip-del-box>:8766` (la sale en la tele y en Ajustes). Ya no hay aviso.
+4. Chrome/Edge › ⋮ › «Transmitir, guardar y compartir» › «Instalar página como aplicación» (o «Aplicaciones › Instalar Súbelo»). Borra antes la app vieja si la hiciste con el puerto 8765.
+
+Conviene reservar en el router la IP del box (DHCP estática) para que la dirección no cambie. Si cambia, el certificado sigue valiendo (el box rehace el suyo con la IP nueva), pero la app instalada apunta a la dirección vieja.
 
 ## 7. ¿Y fuera de casa?
 
@@ -175,6 +194,8 @@ Tal como está, solo funciona con el móvil u ordenador conectados a la red de c
 - **El móvil reconoce a su box.** Al emparejar memoriza su «código del box» (la huella del certificado). Después solo habla con ese box: si otro aparato intenta hacerse pasar por él, la app se niega y te avisa. Por eso conviene comprobar que el código del móvil y el de la tele coinciden al emparejar.
 - **Dos usuarios, Fer y Julss, cada uno con su contraseña y su carpeta.** Cada uno pone su contraseña la primera vez que entra y solo ve su carpeta del disco (`Fer/` o `Julss/`); el otro no puede verla ni con la dirección exacta. Las contraseñas se guardan cifradas (PBKDF2 con sal). Tras 5 contraseñas incorrectas, ese aparato queda bloqueado 5 minutos (y si hay muchos fallos en toda la red, se bloquea todo 10 minutos). Desde la tele se puede borrar una contraseña olvidada; eso cierra sus sesiones.
 - **Ojo con la primera vez:** quien pulse primero un nombre sin contraseña la elige. Entrad los dos cuanto antes.
+- **Certificado del ordenador (puerto 8766).** El box crea su propia autoridad de certificación, guardada solo en su memoria interna. Está limitada (en el propio certificado) a direcciones de casa (`192.168.x.x`, `10.x.x.x`, `172.16–31.x.x`) y a `subelo.local`: aunque alguien la robara, no le serviría para hacerse pasar por ninguna web de Internet. Instálala solo en tus ordenadores. El móvil sigue usando el puerto 8765 con su código del box, sin cambios.
+- **Cambiar la contraseña** (⚙ Ajustes en la web) pide la actual, cierra las demás sesiones de la web y, si lo marcas, también las de los móviles.
 - **Web con sesión segura.** La contraseña no aparece en ninguna dirección ni en el historial; el navegador guarda una cookie protegida (solo HTTPS, inaccesible para otras webs) que caduca tras 30 minutos sin usarla, a las 12 horas, al cerrar el navegador o al reiniciar el box. Todo lo que no sea la pantalla de entrada pide sesión.
 - Solo funciona dentro de tu red; no hay nada abierto a Internet. **No abras el puerto 8765 en el router.** Para usarlo desde fuera, Tailscale.
 - Solo el dueño de una carpeta puede borrar, mover o renombrar lo que hay en ella (lo borrado no va a una papelera), y nadie puede salirse de la carpeta del disco.
@@ -195,4 +216,4 @@ Lo que **no** cubre: el disco no está cifrado (quien se lo lleve, se lleva las 
 - Box también: `Thumbs.java` (miniaturas con caché), `assets/index.html` (la web del ordenador).
 - Móvil también: `ExploreActivity.java` (explorador del disco), `ViewerActivity.java` (visor), `Downloader.java` (guardar en la galería).
 - Box también: `Tls.java` (certificado propio y HTTPS). Móvil también: `VideoProxy.java` (pasarela interna para ver vídeos cifrados).
-- API por HTTPS (token en la cabecera `X-Subelo-Token`, o cookie de sesión, tras `POST /api/login` con `user` y `password`; `POST /api/logout`; `GET /api/users` sin sesión). Las rutas son relativas a la carpeta del usuario: `GET /api/info`, `GET /api/list?path=`, `GET /api/folders?path=`, `POST /api/mkdir?path=`, `GET /api/exists?path=&name=`, `PUT /api/upload?path=&name=&size=&mtime=`, `GET /api/file?path=&name=[&download=1]` (admite Range), `GET /api/thumb?path=&name=`, `GET|POST /api/zip?path=[&name=…]`.
+- API por HTTPS (token en la cabecera `X-Subelo-Token`, o cookie de sesión, tras `POST /api/login` con `user` y `password`; `POST /api/logout`; `GET /api/users` sin sesión). Las rutas son relativas a la carpeta del usuario: `GET /api/info`, `GET /api/list?path=`, `GET /api/folders?path=`, `POST /api/mkdir?path=`, `GET /api/exists?path=&name=`, `PUT /api/upload?path=&name=&size=&mtime=`, `GET /api/file?path=&name=[&download=1]` (admite Range), `GET /api/thumb?path=&name=`, `GET|POST /api/zip?path=[&name=…]`, `POST /api/fav` (`path`, `name`…, `on=1|0`; la carpeta virtual `⭐ Favoritos` se lista como cualquier otra), `POST /api/password` (`password`, `newPassword`, `phones=1`), `GET /api/box` (versión, actualización y datos del certificado del ordenador). Sin sesión: `GET /subelo-certificado.crt` (la autoridad del ordenador) y `GET /manifest.webmanifest`. El puerto 8766 sirve lo mismo que el 8765 con el certificado del ordenador.

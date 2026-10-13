@@ -43,6 +43,7 @@ public class MainActivity extends Activity {
     private Button toggleButton, updateButton;
     private volatile Updater.Release update;
     private volatile String fingerprint;
+    private volatile String caThumbprint; // del certificado para el ordenador (Windows enseña esta huella)
     private final Handler handler = new Handler();
     private final Runnable tick = new Runnable() {
         @Override
@@ -221,6 +222,7 @@ public class MainActivity extends Activity {
             @Override
             public void run() {
                 if (fingerprint == null || fingerprint.isEmpty()) fingerprint = Tls.fingerprint(getFilesDir());
+                if (caThumbprint == null || caThumbprint.isEmpty()) caThumbprint = Tls.caThumbprint(getFilesDir());
                 final String storage;
                 if (st == null) {
                     storage = "Sin configurar. Elige una carpeta del disco USB.";
@@ -242,7 +244,8 @@ public class MainActivity extends Activity {
         }).start();
 
         List<String> ips = Net.localIps();
-        String addr = ips.isEmpty() ? "(sin red)" : "https://" + ips.get(0) + ":" + Config.PORT;
+        String addr = ips.isEmpty() ? "(sin red)" : "https://" + ips.get(0) + ":" + Config.PORT
+                + "\nComo app en el ordenador: https://" + ips.get(0) + ":" + Config.WEB_PORT;
         serverText.setText(ServerService.running ? "● ACTIVO" : "○ DETENIDO");
         serverText.setTextColor(ServerService.running ? 0xFF3DDC84 : Brutal.ORANGE);
         addressText.setText(addr);
@@ -259,7 +262,8 @@ public class MainActivity extends Activity {
             sb.append(u).append(Users.hasPassword(this, u) ? "  ✔ con contraseña" : "  ○ sin contraseña");
         }
         usersText.setText(sb.toString().toUpperCase(java.util.Locale.getDefault()));
-        codeText.setText("CÓDIGO DEL BOX " + Tls.shortCode(fingerprint));
+        codeText.setText("CÓDIGO DEL BOX " + Tls.shortCode(fingerprint)
+                + (caThumbprint == null || caThumbprint.length() < 8 ? "" : "\nCERTIFICADO DEL ORDENADOR " + caThumbprint.substring(0, 8)));
     }
 
     private void confirmReset(final String user) {

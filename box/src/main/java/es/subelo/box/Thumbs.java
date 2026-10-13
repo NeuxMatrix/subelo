@@ -23,7 +23,8 @@ import java.util.concurrent.Semaphore;
 
 /** Miniaturas de fotos y vídeos, guardadas en la caché del box para no recalcularlas. */
 final class Thumbs {
-    private static final int MAX = 320;
+    /** Lado corto de la miniatura (el largo, como mucho el triple): así las fotos altas no salen borrosas. */
+    private static final int MAX = 400;
     private static final Semaphore SEM = new Semaphore(2);
     private static int writes;
 
@@ -53,7 +54,7 @@ final class Thumbs {
         if (r == null) return null;
         String key;
         try {
-            key = rel + "/" + name + "|" + r.size() + "|" + r.mtime();
+            key = rel + "/" + name + "|" + r.size() + "|" + r.mtime() + "|2"; // «|2»: miniaturas más grandes (2.17)
         } finally {
             r.close();
         }
@@ -156,7 +157,8 @@ final class Thumbs {
     }
 
     private static Bitmap scale(Bitmap b, int rotation) {
-        float f = Math.min(1f, (float) MAX / Math.max(b.getWidth(), b.getHeight()));
+        int small = Math.min(b.getWidth(), b.getHeight()), big = Math.max(b.getWidth(), b.getHeight());
+        float f = Math.min(1f, Math.min((float) MAX / small, (float) MAX * 3 / big));
         Matrix m = new Matrix();
         m.postScale(f, f);
         if (rotation != 0) m.postRotate(rotation);

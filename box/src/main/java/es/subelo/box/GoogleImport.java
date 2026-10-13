@@ -82,8 +82,12 @@ final class GoogleImport {
 
     /** Permiso pedido desde la web, esperando a que se pegue la dirección a la que volvió Google. */
     private static final class Pending {
-        String verifier, state, owner, destRel, dest;
+        String verifier, state, owner, destRel, dest, url;
         final long at = System.currentTimeMillis();
+
+        boolean fresh() {
+            return System.currentTimeMillis() - at < 30 * 60 * 1000L;
+        }
     }
 
     private static final Map<String, Pending> PENDING = new HashMap<String, Pending>();
@@ -158,6 +162,16 @@ final class GoogleImport {
         o.put("configured", client != null && p.getProperty("secret") != null);
         o.put("clientId", client == null ? JSONObject.NULL : client);
         o.put("scope", SCOPE);
+        Pending pe;
+        synchronized (PENDING) {
+            pe = PENDING.get(user);
+        }
+        if (pe != null && pe.fresh()) { // la web espera la dirección de vuelta de Google
+            JSONObject w = new JSONObject();
+            w.put("authUrl", pe.url);
+            w.put("dest", pe.dest);
+            o.put("waiting", w);
+        }
         Job j;
         synchronized (JOBS) {
             j = JOBS.get(user);
@@ -264,9 +278,17 @@ final class GoogleImport {
         } catch (java.security.NoSuchAlgorithmException e) {
             throw new IOException(e.getMessage());
         }
-        return "https://accounts.google.com/o/oauth2/v2/auth?client_id=" + enc(client) + "&redirect_uri=" + enc(WEB_REDIRECT)
+        pe.url = "https://accounts.google.com/o/oauth2/v2/auth?client_id=" + enc(client) + "&redirect_uri=" + enc(WEB_REDIRECT)
                 + "&response_type=code&scope=" + enc(SCOPE) + "&code_challenge=" + challenge
                 + "&code_challenge_method=S256&state=" + pe.state + "&prompt=select_account";
+        return pe.url;
+    }
+
+    /** Olvida el permiso que la web estaba esperando. */
+    static void webForget(String user) {
+        synchronized (PENDING) {
+            PENDING.remove(user);
+        }
     }
 
     /** La dirección (o el código) que el usuario ha pegado tras dar permiso en Google. */
@@ -275,10 +297,10 @@ final class GoogleImport {
         synchronized (PENDING) {
             pe = PENDING.remove(user);
         }
-        if (pe == null || System.currentTimeMillis() - pe.at > 30 * 60 * 1000L) {
+        if (pe == null || !pe.fresh()) {
             throw new GoogleException(400, "Ha pasado demasiado tiempo: vuelve a pulsar «Elegir fotos en Google Fotos»");
         }
-        pasted = pasted == null ? "" : pasted.trim();
+        pasted = pasted == null ? "" : pasted.trim().replace("&amp;", "&"); // por si viene de un chat o un correo
         String code = null, state = null, err = null;
         int q = pasted.indexOf('?');
         if (q >= 0 || pasted.contains("code=")) {

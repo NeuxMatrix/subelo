@@ -82,6 +82,12 @@ final class Updater {
                 return null;
             }
         }
+        return cached(c);
+    }
+
+    /** Lo último que se vio en GitHub, sin preguntar: la release más nueva que la instalada, o null. */
+    static Release cached(Context c) {
+        SharedPreferences p = prefs(c);
         if (p.getInt("code", 0) <= installedCode(c) || p.getString("url", null) == null) return null;
         Release r = new Release();
         r.code = p.getInt("code", 0);
@@ -89,6 +95,11 @@ final class Updater {
         r.url = p.getString("url", null);
         r.size = p.getLong("size", -1);
         return r;
+    }
+
+    /** Cuándo se miró GitHub por última vez (0: nunca). */
+    static long lastCheck(Context c) {
+        return prefs(c).getLong("last", 0);
     }
 
     /** Última release publicada, o null si no hay ninguna más nueva que la instalada. */
