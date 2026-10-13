@@ -27,8 +27,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 final class Downloader {
     static final String FOLDER = "Subelo";
-    /** Lo que se prepara para el Echo: Imágenes/Subelo/Echo. */
-    static final String ECHO_FOLDER = FOLDER + "/Echo";
 
     enum Result { SAVED, SKIPPED }
 
@@ -50,7 +48,7 @@ final class Downloader {
         return save(ctx, bc, f, FOLDER, p, cancel).result;
     }
 
-    /** Guarda en la carpeta «folder» (p. ej. «Subelo/Echo») dentro de Imágenes, Películas o Descargas. */
+    /** Guarda en la carpeta «folder» (p. ej. «Subelo») dentro de Imágenes, Películas o Descargas. */
     static Saved save(Context ctx, BoxClient bc, BoxClient.RemoteFile f, String folder, BoxClient.Progress p,
                       AtomicBoolean cancel) throws IOException {
         String mime = mime(f.name);

@@ -400,6 +400,53 @@ final class BoxClient {
         return call("GET", "/api/places", 60000).toString();
     }
 
+    // ---------- Echo: el box sube la carpeta «Echo» a un álbum de Amazon Photos ----------
+
+    JSONObject amazon() throws IOException {
+        return call("GET", "/api/amazon", 15000);
+    }
+
+    /** Pasa al box la sesión de Amazon (cookies de amazon.es); devuelve el estado y los álbumes. */
+    JSONObject amazonConnect(String cookie, String tld) throws IOException {
+        List<String[]> f = new ArrayList<String[]>();
+        f.add(new String[]{"cookie", cookie});
+        f.add(new String[]{"tld", tld});
+        return form("/api/amazon/connect", f);
+    }
+
+    JSONObject amazonAlbums() throws IOException {
+        return call("GET", "/api/amazon/albums", 60000);
+    }
+
+    JSONObject amazonAlbum(String id, String title) throws IOException {
+        List<String[]> f = new ArrayList<String[]>();
+        f.add(new String[]{"id", id});
+        f.add(new String[]{"title", title});
+        return form("/api/amazon/album", f);
+    }
+
+    JSONObject amazonAlbumLink(String link) throws IOException {
+        List<String[]> f = new ArrayList<String[]>();
+        f.add(new String[]{"link", link});
+        return form("/api/amazon/album", f);
+    }
+
+    JSONObject amazonSync() throws IOException {
+        return form("/api/amazon/sync", new ArrayList<String[]>());
+    }
+
+    JSONObject amazonDisconnect() throws IOException {
+        return form("/api/amazon/disconnect", new ArrayList<String[]>());
+    }
+
+    /** Copia fotos de una carpeta a la carpeta «Echo» (el box las añade al álbum). */
+    JSONObject echo(String path, List<String> names) throws IOException {
+        List<String[]> f = new ArrayList<String[]>();
+        f.add(new String[]{"path", path});
+        for (String n : names) f.add(new String[]{"name", n});
+        return form("/api/echo", f);
+    }
+
     /** Miniatura JPEG o null si el box no puede generarla. */
     byte[] thumb(String dir, String name) throws IOException {
         HttpURLConnection c = open("GET", "/api/thumb?path=" + enc(dir) + "&name=" + enc(name), 30000);

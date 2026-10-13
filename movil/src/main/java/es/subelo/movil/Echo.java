@@ -1,38 +1,27 @@
 package es.subelo.movil;
 
-import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
-import android.content.ActivityNotFoundException;
-import android.content.ClipData;
 import android.content.DialogInterface;
 import android.content.Intent;
-import android.content.pm.PackageManager;
-import android.content.pm.ResolveInfo;
-import android.net.Uri;
-import android.os.Build;
 import android.widget.Toast;
+
+import org.json.JSONObject;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.Map;
 
 /**
- * «Enviar al Echo»: copia las fotos elegidas del box a la galería del móvil (Imágenes/Subelo/Echo,
- * que la subida automática ignora) y las abre en Amazon Photos. Amazon no deja meterlas en un
- * álbum desde otra app, así que allí se añaden a mano al álbum que muestra el Echo.
+ * «Enviar al Echo»: copia las fotos elegidas a la carpeta «Echo» del disco. El box sube esa carpeta
+ * a Amazon Photos y la mete en el álbum que enseña el Echo (ver AmazonActivity).
  */
 final class Echo {
-    static final String AMAZON_PHOTOS = "com.amazon.clouddrive.photos";
-    static final int REQ_WRITE = 41;
-
-    private static List<BoxClient.RemoteFile> pending;
-
     private Echo() {}
 
-    /** Pregunta y, si dice que sí, prepara y comparte las fotos de la lista (los vídeos se saltan). */
+    /** Pregunta y, si dice que sí, copia las fotos de la lista (los vídeos se saltan). */
     static void send(final Activity a, List<BoxClient.RemoteFile> list) {
         final List<BoxClient.RemoteFile> photos = new ArrayList<BoxClient.RemoteFile>();
         for (BoxClient.RemoteFile f : list) if (Downloader.isImage(f.name)) photos.add(f);
@@ -44,78 +33,50 @@ final class Echo {
         String what = photos.size() == 1 ? "la foto" : "las " + photos.size() + " fotos";
         new AlertDialog.Builder(a)
                 .setTitle("Enviar al Echo")
-                .setMessage("Guardo " + what + " en el móvil (galería › Subelo › Echo) y las abro en Amazon Photos."
-                        + "\n\nAmazon las sube a tu cuenta; después añádelas allí al álbum que muestra tu Echo."
+                .setMessage("Copio " + what + " a tu carpeta «Echo» y el box las añade al álbum de Amazon Photos que enseña tu Echo."
                         + (skipped > 0 ? "\n\n" + skipped + (skipped == 1 ? " vídeo o archivo se queda" : " vídeos o archivos se quedan")
                         + " fuera: el Echo solo enseña fotos." : ""))
                 .setPositiveButton("Enviar", new DialogInterface.OnClickListener() {
                     @Override
                     public void onClick(DialogInterface d, int w) {
-                        start(a, photos);
+                        copy(a, photos);
                     }
                 })
                 .setNegativeButton("Cancelar", null)
                 .show();
     }
 
-    /** Para llamar desde onRequestPermissionsResult de la pantalla (Android 9 o anterior). */
-    static boolean onPermission(Activity a, int requestCode, int[] results) {
-        if (requestCode != REQ_WRITE || pending == null) return false;
-        List<BoxClient.RemoteFile> l = pending;
-        pending = null;
-        if (results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) start(a, l);
-        else Toast.makeText(a, "Sin permiso no puedo guardar las fotos en el móvil", Toast.LENGTH_LONG).show();
-        return true;
-    }
-
-    private static void start(final Activity a, final List<BoxClient.RemoteFile> photos) {
-        if (Build.VERSION.SDK_INT < 29
-                && a.checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
-            pending = photos;
-            a.requestPermissions(new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE}, REQ_WRITE);
-            return;
-        }
-        final AtomicBoolean cancel = new AtomicBoolean();
+    private static void copy(final Activity a, final List<BoxClient.RemoteFile> photos) {
         final AlertDialog progress = new AlertDialog.Builder(a)
-                .setTitle("Preparando para el Echo")
-                .setMessage("Conectando con el box…")
+                .setTitle("Enviar al Echo")
+                .setMessage("Copiando " + (photos.size() == 1 ? "la foto" : photos.size() + " fotos") + "…")
                 .setCancelable(false)
-                .setNegativeButton("Cancelar", new DialogInterface.OnClickListener() {
-                    @Override
-                    public void onClick(DialogInterface d, int w) {
-                        cancel.set(true);
-                    }
-                })
                 .show();
         new Thread(new Runnable() {
             @Override
             public void run() {
-                final ArrayList<Uri> uris = new ArrayList<Uri>();
+                // por carpetas: normalmente es una sola
+                Map<String, List<String>> byDir = new LinkedHashMap<String, List<String>>();
+                for (BoxClient.RemoteFile f : photos) {
+                    List<String> l = byDir.get(f.dir);
+                    if (l == null) byDir.put(f.dir, l = new ArrayList<String>());
+                    l.add(f.name);
+                }
+                JSONObject status = null;
+                int copied = 0, already = 0;
                 String error = null;
                 try {
                     BoxClient bc = BoxClient.connect(a);
-                    for (int i = 0; i < photos.size() && !cancel.get(); i++) {
-                        final BoxClient.RemoteFile f = photos.get(i);
-                        final String label = "Foto " + (i + 1) + " de " + photos.size() + "\n" + f.name;
-                        a.runOnUiThread(new Runnable() {
-                            @Override
-                            public void run() {
-                                progress.setMessage(label);
-                            }
-                        });
-                        try {
-                            Downloader.Saved s = Downloader.save(a, bc, f, Downloader.ECHO_FOLDER, null, cancel);
-                            if (s.uri != null) uris.add(s.uri);
-                        } catch (BoxClient.BoxException e) {
-                            if (e.code == 401 || e.code == 503) throw e;
-                            error = e.getMessage(); // esa foto ya no está: sigue con las demás
-                        }
+                    for (Map.Entry<String, List<String>> e : byDir.entrySet()) {
+                        status = bc.echo(e.getKey(), e.getValue());
+                        copied += status.optInt("copied");
+                        already += status.optInt("already");
                     }
                 } catch (IOException e) {
                     error = e.getMessage();
-                } catch (RuntimeException e) {
-                    error = String.valueOf(e.getMessage());
                 }
+                final JSONObject st = status;
+                final int c = copied, al = already;
                 final String err = error;
                 a.runOnUiThread(new Runnable() {
                     @Override
@@ -125,102 +86,43 @@ final class Echo {
                             progress.dismiss();
                         } catch (RuntimeException ignored) {
                         }
-                        if (cancel.get()) return;
-                        if (uris.isEmpty()) {
-                            Toast.makeText(a, "No se pudieron preparar las fotos" + (err == null ? "" : ": " + err),
-                                    Toast.LENGTH_LONG).show();
-                            return;
-                        }
-                        if (err != null) {
-                            Toast.makeText(a, "Solo se prepararon " + uris.size() + " de " + photos.size() + ": " + err,
-                                    Toast.LENGTH_LONG).show();
-                        }
-                        share(a, uris);
+                        done(a, st, c, al, err);
                     }
                 });
             }
         }, "subelo-echo").start();
     }
 
-    /**
-     * Abre Amazon Photos con las fotos. Busca entre las apps que reciben fotos compartidas la de
-     * Amazon Photos (o, si cambia de nombre, otra de Amazon con «Photos»); si no está, explica qué
-     * ve y abre el menú normal de compartir.
-     */
-    static void share(final Activity a, ArrayList<Uri> uris) {
-        final Intent i;
-        if (uris.size() == 1) {
-            i = new Intent(Intent.ACTION_SEND).putExtra(Intent.EXTRA_STREAM, uris.get(0));
-        } else {
-            i = new Intent(Intent.ACTION_SEND_MULTIPLE).putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris);
+    private static void done(final Activity a, JSONObject st, int copied, int already, String err) {
+        if (st == null) {
+            new AlertDialog.Builder(a).setMessage("✖ No se pudieron enviar: " + err).setPositiveButton("Vale", null).show();
+            return;
         }
-        i.setType("image/*");
-        ClipData cd = null;
-        for (Uri u : uris) {
-            if (cd == null) cd = ClipData.newRawUri("fotos", u);
-            else cd.addItem(new ClipData.Item(u));
+        String msg = copied + already == 0 ? "No se ha copiado ninguna foto."
+                : (copied > 0 ? (copied == 1 ? "1 foto copiada" : copied + " fotos copiadas") + " a la carpeta «Echo»." : "")
+                + (already > 0 ? (copied > 0 ? " " : "") + (already == 1 ? "1 ya estaba" : already + " ya estaban") + " en la carpeta." : "");
+        if (err != null) msg += "\n\n✖ Algunas no se pudieron copiar: " + err;
+        boolean ready = st.optBoolean("connected") && !st.optBoolean("expired") && !st.isNull("album");
+        if (ready) {
+            JSONObject album = st.optJSONObject("album");
+            Toast.makeText(a, msg + " Irán al álbum «" + (album == null ? "" : album.optString("name")) + "» en un momento.",
+                    Toast.LENGTH_LONG).show();
+            return;
         }
-        i.setClipData(cd);
-        i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-
-        PackageManager pm = a.getPackageManager();
-        List<ResolveInfo> targets = pm.queryIntentActivities(i, PackageManager.MATCH_DEFAULT_ONLY);
-        ResolveInfo best = null;
-        StringBuilder amazon = new StringBuilder();
-        for (ResolveInfo r : targets) {
-            String pkg = r.activityInfo.packageName;
-            String label = String.valueOf(r.loadLabel(pm));
-            String l = (pkg + " " + label).toLowerCase(Locale.ROOT);
-            if (!l.contains("amazon")) continue;
-            if (amazon.length() > 0) amazon.append(", ");
-            amazon.append(label);
-            if (pkg.equals(AMAZON_PHOTOS)) best = r;
-            else if (best == null && (l.contains("photo") || l.contains("foto"))) best = r;
-        }
-        if (best != null) {
-            try {
-                a.startActivity(new Intent(i).setClassName(best.activityInfo.packageName, best.activityInfo.name));
-                return;
-            } catch (ActivityNotFoundException | SecurityException ignored) {
-                // no se dejó abrir: se explica abajo
-            }
-        }
-        boolean singleOnly = false; // ¿la acepta de una en una pero no varias a la vez?
-        if (best == null && uris.size() > 1) {
-            Intent one = new Intent(Intent.ACTION_SEND).putExtra(Intent.EXTRA_STREAM, uris.get(0)).setType("image/*");
-            for (ResolveInfo r : pm.queryIntentActivities(one, PackageManager.MATCH_DEFAULT_ONLY)) {
-                if (r.activityInfo.packageName.equals(AMAZON_PHOTOS)) singleOnly = true;
-            }
-        }
-        boolean installed;
-        try {
-            pm.getPackageInfo(AMAZON_PHOTOS, 0);
-            installed = true;
-        } catch (PackageManager.NameNotFoundException e) {
-            installed = false;
-        }
-        String msg = singleOnly
-                ? "Amazon Photos solo acepta las fotos de una en una: elige una sola foto y vuelve a enviarla."
-                : installed
-                ? "Amazon Photos está instalada, pero no aparece entre las apps que reciben fotos compartidas."
-                : "No veo la app Amazon Photos en este móvil.";
-        msg += "\n\nApps de Amazon que reciben fotos: " + (amazon.length() > 0 ? amazon : "ninguna") + "."
-                + "\n\nPulsa «Ver apps» y busca Amazon Photos en la lista. Las fotos ya están en la galería, "
-                + "en Subelo › Echo, por si prefieres subirlas desde Amazon Photos.";
+        msg += "\n\n" + (!st.optBoolean("connected") ? "Falta conectar Súbelo con tu Amazon Photos"
+                : st.optBoolean("expired") ? "La sesión de Amazon ha caducado: vuelve a entrar"
+                : "Falta elegir el álbum del Echo")
+                + " para que lleguen al Echo. Se quedan esperando en la carpeta.";
         new AlertDialog.Builder(a)
-                .setTitle("No encuentro Amazon Photos")
+                .setTitle("Enviar al Echo")
                 .setMessage(msg)
-                .setPositiveButton("Ver apps", new DialogInterface.OnClickListener() {
+                .setPositiveButton("Conectar ahora", new DialogInterface.OnClickListener() {
                     @Override
                     public void onClick(DialogInterface d, int w) {
-                        try {
-                            a.startActivity(Intent.createChooser(i, "Enviar al Echo con…"));
-                        } catch (ActivityNotFoundException e) {
-                            Toast.makeText(a, "No hay ninguna app para compartir fotos", Toast.LENGTH_LONG).show();
-                        }
+                        a.startActivity(new Intent(a, AmazonActivity.class));
                     }
                 })
-                .setNegativeButton("Cerrar", null)
+                .setNegativeButton("Luego", null)
                 .show();
     }
 }

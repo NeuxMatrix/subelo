@@ -55,6 +55,12 @@ import javax.net.ssl.SSLSocketFactory;
  * POST /api/login           user=&password=[&client=app]: entra (la primera vez, fija la contraseña).
  *                            La web recibe una cookie; la app, un token para la cabecera X-Subelo-Token.
  * POST /api/logout           cierra la sesión
+ * POST /api/echo             path=&name=…: copia esas fotos a la carpeta «Echo» (va al álbum de Amazon Photos)
+ * GET  /api/amazon           estado del puente con Amazon Photos (EchoSync)
+ * POST /api/amazon/connect   cookie=&tld=: guarda la sesión de Amazon (entrada desde el móvil); devuelve álbumes
+ * GET  /api/amazon/albums    álbumes de Amazon Photos
+ * POST /api/amazon/album     id=&title= o link=: el álbum del Echo
+ * POST /api/amazon/sync      repasar ya;  POST /api/amazon/disconnect: olvidar la sesión de Amazon
  *
  * Todo va cifrado con HTTPS (certificado propio del box, ver Tls.java). Si alguien escribe la
  * dirección con http://, se le redirige a https://.
@@ -85,6 +91,7 @@ final class HttpServer {
 
     synchronized void start() throws IOException {
         if (running) return;
+        EchoSync.start(ctx);
         SSLContext tls = Tls.context(ctx.getFilesDir());
         try {
             wrapTls = SSLSocketFactory.class.getMethod("createSocket", Socket.class, InputStream.class, boolean.class);
@@ -351,6 +358,10 @@ final class HttpServer {
             error(out, 401, "Tienes que entrar con tu usuario");
             return;
         }
+        if (path.equals("/api/amazon") || path.startsWith("/api/amazon/")) {
+            amazon(method, path, user, params, out);
+            return;
+        }
         if (!available) {
             error(out, 503, st == null
                     ? "El box no tiene ningún disco configurado. Ábrelo en la tele y elige la carpeta del disco USB."
@@ -379,7 +390,7 @@ final class HttpServer {
         }
         boolean reading = path.equals("/api/folders") || path.equals("/api/list") || path.equals("/api/albums")
                 || path.equals("/api/file") || path.equals("/api/thumb") || path.equals("/api/zip")
-                || path.equals("/api/exists") || path.equals("/api/places");
+                || path.equals("/api/exists") || path.equals("/api/places") || path.equals("/api/echo");
         boolean adding = path.equals("/api/mkdir") || path.equals("/api/upload");
         if (!acc.own && !reading && !(adding && acc.canAdd())) {
             error(out, 403, adding ? "Esta carpeta es de " + acc.owner + " y solo te deja verla."
@@ -427,6 +438,13 @@ final class HttpServer {
             json(out, 200, o);
         } else if (path.equals("/api/upload") && (method.equals("PUT") || method.equals("POST"))) {
             upload(st, dirRel, params, body, contentLength, out);
+            if (dirRel.equals(acc.owner + "/" + EchoSync.FOLDER)) EchoSync.kick(ctx, acc.owner);
+        } else if (path.equals("/api/echo")) {
+            if (!method.equals("POST")) {
+                error(out, 405, "Usa POST");
+                return;
+            }
+            echoCopy(st, dirRel, user, names, out);
         } else if (path.equals("/api/list")) {
             Object d = st.dir(dirRel, rel.isEmpty());
             if (d == null) {
@@ -577,11 +595,128 @@ final class HttpServer {
             }
             o.put("ok", true);
             json(out, 200, o);
+            EchoSync.kick(ctx, user); // por si ha tocado la carpeta del Echo
         } else if (path.equals("/api/zip")) {
             zip(st, dirRel, names, out);
         } else {
             error(out, 404, "No encontrado");
         }
+    }
+
+    // ---------- Echo (Amazon Photos) ----------
+
+    private void amazon(String method, String path, String user, Map<String, String> params, OutputStream out)
+            throws IOException, JSONException {
+        if (path.equals("/api/amazon")) {
+            json(out, 200, EchoSync.statusJson(ctx, user));
+            return;
+        }
+        if (!method.equals("POST") && !path.equals("/api/amazon/albums")) {
+            error(out, 405, "Usa POST");
+            return;
+        }
+        // los fallos de Amazon van como 502: el 401 lo reserva la app para «sesión de Súbelo caducada»
+        try {
+            if (path.equals("/api/amazon/connect")) {
+                String tld = params.get("tld");
+                if (tld == null || !tld.matches("[a-z]{2,3}(\\.[a-z]{2})?")) tld = "es";
+                EchoSync.connect(ctx, user, params.get("cookie"), tld);
+                JSONObject o = EchoSync.statusJson(ctx, user);
+                try {
+                    o.put("albums", EchoSync.albumsJson(EchoSync.albums(ctx, user)));
+                } catch (IOException e) {
+                    o.put("albumsError", e.getMessage());
+                }
+                json(out, 200, o);
+            } else if (path.equals("/api/amazon/albums")) {
+                JSONObject o = new JSONObject();
+                o.put("albums", EchoSync.albumsJson(EchoSync.albums(ctx, user)));
+                json(out, 200, o);
+            } else if (path.equals("/api/amazon/album")) {
+                String id = params.get("id"), name = params.get("title"), link = params.get("link"); // «name» lo usan los ficheros
+                if (link != null && !link.trim().isEmpty()) {
+                    Amazon.Album a = EchoSync.albumFromLink(ctx, user, link);
+                    id = a.id;
+                    name = a.name;
+                }
+                if (id == null || !id.matches("[A-Za-z0-9_-]{1,200}")) {
+                    error(out, 400, "Elige un álbum");
+                    return;
+                }
+                EchoSync.setAlbum(ctx, user, id, name);
+                json(out, 200, EchoSync.statusJson(ctx, user));
+            } else if (path.equals("/api/amazon/sync")) {
+                EchoSync.kick(ctx, user);
+                json(out, 200, EchoSync.statusJson(ctx, user));
+            } else if (path.equals("/api/amazon/disconnect")) {
+                EchoSync.disconnect(ctx, user);
+                json(out, 200, EchoSync.statusJson(ctx, user));
+            } else {
+                error(out, 404, "No encontrado");
+            }
+        } catch (IOException e) {
+            error(out, 502, e.getMessage() == null ? "No se pudo hablar con Amazon" : e.getMessage());
+        }
+    }
+
+    /** Copia fotos a la carpeta «Echo» del usuario (desde la suya o desde una compartida). */
+    private void echoCopy(Store st, String dirRel, String user, List<String> names, OutputStream out)
+            throws IOException, JSONException {
+        Object src = st.dir(dirRel, false);
+        if (src == null) {
+            error(out, 404, "La carpeta no existe");
+            return;
+        }
+        String echoRel = user + "/" + EchoSync.FOLDER;
+        Object dst = st.dir(echoRel, true);
+        int copied = 0, already = 0, skipped = 0;
+        byte[] buf = new byte[256 * 1024];
+        for (String n : names) {
+            if (!existingName(n) || !Thumbs.isImage(n)) {
+                skipped++;
+                continue;
+            }
+            if (dirRel.equals(echoRel)) {
+                already++;
+                continue;
+            }
+            Store.Readable rd = st.read(src, n);
+            if (rd == null) {
+                skipped++;
+                continue;
+            }
+            Store.Upload up = null;
+            boolean ok = false;
+            try {
+                up = st.begin(dst, n);
+                OutputStream os = up.out();
+                InputStream in = rd.open(0);
+                long total = 0;
+                try {
+                    int r;
+                    while ((r = in.read(buf)) != -1) {
+                        os.write(buf, 0, r);
+                        total += r;
+                    }
+                } finally {
+                    in.close();
+                }
+                os.close();
+                Store.Committed c = up.commit(rd.mtime(), total);
+                ok = true;
+                if (c.duplicate) already++;
+                else copied++;
+            } finally {
+                if (!ok && up != null) up.abort();
+                rd.close();
+            }
+        }
+        EchoSync.kick(ctx, user);
+        JSONObject o = EchoSync.statusJson(ctx, user);
+        o.put("copied", copied);
+        o.put("already", already);
+        o.put("skipped", skipped);
+        json(out, 200, o);
     }
 
     /** Una carpeta como «álbum»: cuántas fotos tiene, subcarpetas y una portada. null si no existe. */

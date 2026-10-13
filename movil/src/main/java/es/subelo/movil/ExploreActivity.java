@@ -441,7 +441,6 @@ public class ExploreActivity extends Activity {
 
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] results) {
-        if (Echo.onPermission(this, requestCode, results)) return;
         if (requestCode == REQ_WRITE && pendingDownload != null) {
             List<BoxClient.RemoteFile> l = pendingDownload;
             pendingDownload = null;

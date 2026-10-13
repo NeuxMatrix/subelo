@@ -214,8 +214,14 @@ public class MainActivity extends Activity {
                 openBox(MapActivity.class);
             }
         }), Brutal.full(this));
+        main.addView(Brutal.button(this, "📺 Fotos al Echo", Brutal.PAPER, Brutal.BLACK, new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                openBox(AmazonActivity.class);
+            }
+        }), Brutal.full(this));
         TextView sub = Brutal.mono(this, 11, Brutal.PAPER);
-        sub.setText("VER · SUBIR A UNA CARPETA · DESCARGAR · DÓNDE SE HICIERON");
+        sub.setText("VER · SUBIR A UNA CARPETA · DESCARGAR · DÓNDE SE HICIERON · TU ÁLBUM DEL ECHO");
         sub.setPadding(dp(2), dp(4), 0, 0);
         main.addView(sub);
         col.addView(main, col.indexOfChild(box), Brutal.cardParams(this)); // lo primero, lo que más se usa

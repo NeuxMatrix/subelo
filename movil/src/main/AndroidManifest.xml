@@ -23,19 +23,6 @@
         android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="28" />
 
-    <!-- Para encontrar Amazon Photos al «Enviar al Echo» (Android 11+ solo deja ver lo que se declara) -->
-    <queries>
-        <package android:name="com.amazon.clouddrive.photos" />
-        <intent>
-            <action android:name="android.intent.action.SEND" />
-            <data android:mimeType="image/*" />
-        </intent>
-        <intent>
-            <action android:name="android.intent.action.SEND_MULTIPLE" />
-            <data android:mimeType="image/*" />
-        </intent>
-    </queries>
-
     <application
         android:name=".SubeloApp"
         android:label="Súbelo"
@@ -65,6 +52,12 @@
             android:name=".LoginActivity"
             android:exported="false"
             android:label="Súbelo" />
+
+        <activity
+            android:name=".AmazonActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
+            android:windowSoftInputMode="adjustResize" />
 
         <activity
             android:name=".LockActivity"

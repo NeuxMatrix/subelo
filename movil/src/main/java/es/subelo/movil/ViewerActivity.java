@@ -169,11 +169,6 @@ public class ViewerActivity extends Activity {
     }
 
     @Override
-    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] results) {
-        Echo.onPermission(this, requestCode, results);
-    }
-
-    @Override
     protected void onSaveInstanceState(Bundle out) {
         super.onSaveInstanceState(out);
         out.putInt("index", index);
