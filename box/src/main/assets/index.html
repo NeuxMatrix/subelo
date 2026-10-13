@@ -743,7 +743,7 @@ function updateSel() {
   $('selN').textContent = plural(n, 'elegida', 'elegidas');
   $('dlSel').hidden = selected.size === 0;
   $('echoSel').hidden = ![...selected].some(isImg);
-  $('geoSel').hidden = !canGeo([...selected]);
+  $('geoSel').hidden = !canGeo([...selected], [...selDirs]);
   $('ren').hidden = !own || n !== 1;
   $('mv').hidden = $('del').hidden = !own;
   const names = [...selected], allFav = names.length > 0 && names.every(n => (allFiles.find(f => f.name === n) || {}).fav);
@@ -923,8 +923,9 @@ async function sendEcho(names) {
 $('echoSel').onclick = async () => { if (await sendEcho([...selected])) { selected.clear(); selDirs.clear(); render(); } };
 
 // ---------- 📍 dónde se hizo (se guarda en el box; el archivo no se toca) ----------
-// solo en lo tuyo (o en tus favoritos que son tuyos), y solo fotos y vídeos
-function canGeo(names) {
+// solo en lo tuyo (o en tus favoritos que son tuyos): fotos, vídeos y carpetas enteras
+function canGeo(names, dirs = []) {
+  if (access === 'own' && dirs.some(d => !special(d))) return true;
   if (access !== 'own' && access !== 'fav') return false;
   return names.length > 0 && names.some(n => {
     const f = allFiles.find(x => x.name === n);
@@ -932,14 +933,21 @@ function canGeo(names) {
   });
 }
 let geoJob = null;
-async function geoPick(dir, names, after) {
-  let info = {};
-  try { info = await api('/api/geo?path=' + enc(dir) + '&name=' + enc(names[0])); } catch (e) { if (e instanceof Expired) return; }
+async function geoPick(dir, names, after, folders = 0) {
+  let info = {}, otro = '';
+  try {
+    info = await api('/api/geo?path=' + enc(dir) + '&name=' + enc(names[0]));
+    const u = await api('/api/users'); // con quién se puede compartir en el mapa
+    otro = ((u.users || []).map(x => x.name).find(n => n !== user)) || '';
+  } catch (e) { if (e instanceof Expired) return; }
   geoJob = {dir, names, after};
-  const q = new URLSearchParams({embed: '1', pick: '1', n: String(names.length),
+  const q = new URLSearchParams({embed: '1', pick: '1', n: String(names.length), carpetas: String(folders),
     tema: document.documentElement.getAttribute('data-theme') === 'dark' ? 'oscuro' : 'claro'});
   if (info.lat != null) { q.set('lat', info.lat); q.set('lon', info.lon); }
   if (info.manual) q.set('manual', '1');
+  if (otro) q.set('otro', otro);
+  if (info.con && info.con.length) q.set('con', info.con.join(','));
+  if (info.heredado && info.heredado.length) q.set('heredado', info.heredado.join(','));
   $('geoFrame').src = '/mapa.html?' + q;
   modal('geoBox', true);
 }
@@ -963,18 +971,22 @@ addEventListener('message', async e => {
   if (d.subelo === 'cancelar') { geoClose(); return; }
   if (d.subelo !== 'sitio' && d.subelo !== 'quitar') return;
   const fields = [['path', job.dir], ...job.names.map(n => ['name', n])];
-  if (d.subelo === 'sitio') fields.push(['lat', String(d.lat)], ['lon', String(d.lon)]); else fields.push(['clear', '1']);
+  if (d.subelo === 'sitio') {
+    fields.push(['lat', String(d.lat)], ['lon', String(d.lon)]);
+    if (d.con) fields.push(['con', String(d.con)]);
+  } else fields.push(['clear', '1']);
   let r;
   try { r = await post('/api/geo', fields); } catch (err) { fail(err); geoClose(); return; }
   geoClose();
   toast(d.subelo === 'sitio'
-    ? '📍 ' + plural(r.changed || 0, 'foto ya sale', 'fotos ya salen') + ' en ese sitio del Mapa. El archivo no se ha tocado.'
-    : '↺ Quitada la ubicación puesta a mano' + ((r.changed || 0) > 1 ? ' de ' + r.changed + ' fotos' : '') + ': vuelve la del GPS de la foto, si tenía.');
+    ? '📍 Guardado ' + (d.con ? 'para los dos: sale en tu mapa y en el de ' + d.con : 'solo para ti') + '. Los archivos no se tocan.'
+    : '↺ Quitada la ubicación puesta a mano' + ((r.changed || 0) > 1 ? ' de ' + r.changed : '') + ': vuelve la del GPS de la foto, si tenía.');
   if (job.after) job.after();
 });
 $('geoSel').onclick = () => {
-  const names = [...selected].filter(n => isImg(n) || isVid(n));
-  geoPick(path, names, () => { selected.clear(); selDirs.clear(); render(); });
+  const dirs = access === 'own' ? [...selDirs].filter(d => !special(d)) : [];
+  const names = [...selected].filter(n => isImg(n) || isVid(n)).concat(dirs);
+  if (names.length) geoPick(path, names, () => { selected.clear(); selDirs.clear(); render(); }, dirs.length);
 };
 $('vgeo').onclick = () => { if (vi >= 0) geoPick(path, [files[vi].name]); };
 

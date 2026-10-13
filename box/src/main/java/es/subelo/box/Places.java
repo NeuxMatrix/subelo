@@ -50,9 +50,8 @@ final class Places {
 
     private Places() {}
 
-    /** JSON con las fotos con ubicación que se conocen ya; arranca un repaso si toca. */
-    static String json(final Context ctx, final Store st, final String user) {
-        final State s;
+    /** El estado (caché) de un usuario; arranca un repaso de su carpeta si toca. */
+    private static State state(final Context ctx, final Store st, final String user) {
         synchronized (STATES) {
             State x = STATES.get(user);
             if (x == null) {
@@ -60,7 +59,7 @@ final class Places {
                 x.recs = load(file(ctx, user));
                 STATES.put(user, x);
             }
-            s = x;
+            final State s = x;
             if (!s.scanning && System.currentTimeMillis() - s.lastScan > RESCAN_MS) {
                 s.scanning = true;
                 s.seen = 0;
@@ -80,33 +79,99 @@ final class Places {
                 t.setPriority(Thread.MIN_PRIORITY);
                 t.start();
             }
+            return s;
         }
-        Map<String, double[]> manual = Geo.of(ctx, user); // las puestas a mano mandan sobre el GPS
+    }
+
+    /**
+     * JSON con las fotos con ubicación que se conocen ya; arranca un repaso si toca. Salen las tuyas,
+     * las de las carpetas que el otro te comparte y las que el otro ha ubicado «con» contigo (📍).
+     * Cada una: [carpeta para pedirla, nombre, lat, lon, día, tamaño, puesta a mano (1/0),
+     * dueño («» si es tuya), compartida en el mapa (1/0)].
+     */
+    static String json(final Context ctx, final Store st, final String user) {
+        State mine = state(ctx, st, user);
+        Map<String, Geo.Entry> geo = Geo.all(ctx); // las puestas a mano mandan sobre el GPS
+        List<Shares.Share> in = Shares.incoming(ctx, user);
         StringBuilder sb = new StringBuilder(64 * 1024);
-        int total;
-        synchronized (s) {
-            total = s.recs.size();
-            sb.append("{\"places\":[");
-            boolean first = true;
-            for (Rec r : s.recs.values()) {
-                double[] m = manual.get(user + (r.dir.isEmpty() ? "" : "/" + r.dir) + "/" + r.name);
-                double lat = m != null ? m[0] : r.lat, lon = m != null ? m[1] : r.lon;
-                if (Double.isNaN(lat)) continue;
-                if (!first) sb.append(',');
-                first = false;
-                sb.append('[');
-                str(sb, r.dir);
-                sb.append(',');
-                str(sb, r.name);
-                sb.append(',').append(String.format(Locale.US, "%.6f,%.6f", lat, lon)).append(',');
-                str(sb, r.date);
-                sb.append(',').append(r.size).append(',').append(m != null ? 1 : 0).append(']');
+        sb.append("{\"places\":[");
+        boolean[] first = {true};
+        boolean scanning = mine.scanning;
+        int total, seen = mine.seen;
+        synchronized (mine) {
+            total = mine.recs.size();
+            for (Rec r : mine.recs.values()) {
+                String store = store(user, r);
+                place(sb, first, r, r.dir, geo, store, "", !Geo.sharedWith(geo, store).isEmpty());
+            }
+        }
+        for (String other : Users.NAMES) {
+            if (other.equals(user) || !mayShare(geo, in, other, user)) continue;
+            State s = state(ctx, st, other);
+            scanning |= s.scanning;
+            synchronized (s) {
+                for (Rec r : s.recs.values()) {
+                    String store = store(other, r), path = null;
+                    for (Shares.Share sh : in) { // en una carpeta que te comparte: por ahí se pide
+                        String base = sh.owner + "/" + sh.path + "/";
+                        if (!store.startsWith(base)) continue;
+                        String inner = store.substring(base.length()), sub = inner.substring(0, Math.max(0, inner.lastIndexOf('/')));
+                        path = Shares.VIRTUAL + "/" + sh.name + (sub.isEmpty() ? "" : "/" + sub);
+                        break;
+                    }
+                    if (path == null) {
+                        if (!Geo.sharedWith(geo, store).contains(user)) continue;
+                        path = Geo.VIRTUAL + "/" + other + (r.dir.isEmpty() ? "" : "/" + r.dir);
+                    }
+                    place(sb, first, r, path, geo, store, other, true);
+                }
             }
         }
         sb.append("],\"media\":").append(total)
-                .append(",\"scanning\":").append(s.scanning)
-                .append(",\"seen\":").append(s.seen).append('}');
+                .append(",\"scanning\":").append(scanning)
+                .append(",\"seen\":").append(seen).append('}');
         return sb.toString();
+    }
+
+    private static String store(String owner, Rec r) {
+        return owner + "/" + (r.dir.isEmpty() ? "" : r.dir + "/") + r.name;
+    }
+
+    /** ¿Puede haber algo de «owner» en el mapa de «user»? (para no repasar su carpeta si no). */
+    private static boolean mayShare(Map<String, Geo.Entry> geo, List<Shares.Share> in, String owner, String user) {
+        for (Shares.Share sh : in) if (sh.owner.equals(owner)) return true;
+        for (Map.Entry<String, Geo.Entry> e : geo.entrySet()) {
+            if (e.getKey().startsWith(owner + "/") && e.getValue().with.contains(user)) return true;
+        }
+        return false;
+    }
+
+    /** Añade una foto al JSON si se sabe dónde se hizo: la puesta a mano, el GPS o la de su carpeta. */
+    private static void place(StringBuilder sb, boolean[] first, Rec r, String path, Map<String, Geo.Entry> geo,
+                              String store, String owner, boolean shared) {
+        Geo.Entry m = geo.get(store);
+        double lat = r.lat, lon = r.lon;
+        if (m != null) {
+            lat = m.lat;
+            lon = m.lon;
+        } else if (Double.isNaN(lat)) {
+            Geo.Entry f = Geo.folderOf(geo, store);
+            if (f == null) return;
+            lat = f.lat;
+            lon = f.lon;
+            m = f;
+        }
+        if (!first[0]) sb.append(',');
+        first[0] = false;
+        sb.append('[');
+        str(sb, path);
+        sb.append(',');
+        str(sb, r.name);
+        sb.append(',').append(String.format(Locale.US, "%.6f,%.6f", lat, lon)).append(',');
+        str(sb, r.date);
+        sb.append(',').append(r.size).append(',').append(m != null ? 1 : 0).append(',');
+        str(sb, owner);
+        sb.append(',').append(shared ? 1 : 0).append(']');
     }
 
     /** Ubicación del GPS de una foto si ya se ha leído (sin esperar a repasar el disco), o null. */

@@ -458,6 +458,11 @@ final class HttpServer {
             shares(st, method, path, user, rel, params, out);
             return;
         }
+        // lo que el otro ha puesto en el mapa «con» contigo: solo se puede ver (miniatura, archivo, ubicación)
+        if (rel.equals(Geo.VIRTUAL) || rel.startsWith(Geo.VIRTUAL + "/")) {
+            mapShared(st, method, path, user, rel, params, headers, out);
+            return;
+        }
         // los favoritos: otra carpeta especial, que solo apunta a fotos de otras carpetas
         if (Favorites.isVirtual(rel)) {
             favorites(st, method, path, user, rel, names, params, headers, out);
@@ -584,19 +589,22 @@ final class HttpServer {
             o.put("changed", Favorites.set(ctx, user, stores, !"0".equals(params.get("on"))));
             json(out, 200, o);
         } else if (path.equals("/api/geo")) {
+            // archivos («Fer/Roma/IMG.jpg») o carpetas enteras («Fer/Roma/», con barra al final)
             Object d = st.dir(dirRel, false);
-            List<String> stores = new ArrayList<String>();
+            List<String> keys = new ArrayList<String>();
             for (String n : names) {
-                if (d != null && existingName(n) && st.fileSize(d, n) >= 0) stores.add(dirRel + "/" + n);
+                if (d == null || !existingName(n)) continue;
+                if (st.fileSize(d, n) >= 0) keys.add(dirRel + "/" + n);
+                else if (!Store.hidden(n) && st.dir(dirRel + "/" + n, false) != null) keys.add(dirRel + "/" + n + "/");
             }
-            if (stores.isEmpty()) {
-                error(out, 400, "No has elegido ninguna foto");
+            if (keys.isEmpty()) {
+                error(out, 400, "No has elegido ninguna foto ni carpeta");
                 return;
             }
             if (method.equals("GET")) {
-                json(out, 200, geoInfo(user, stores.get(0)));
+                json(out, 200, geoInfo(user, keys.get(0)));
             } else {
-                geoSet(stores, params, out);
+                geoSet(user, keys, params, out);
             }
         } else if (path.equals("/api/albums")) {
             Object d = st.dir(dirRel, rel.isEmpty());
@@ -965,26 +973,44 @@ final class HttpServer {
         out.flush();
     }
 
-    /** Dónde se hizo una foto (ruta en el disco): la puesta a mano o la del GPS, si ya se ha leído. */
-    private JSONObject geoInfo(String user, String store) throws JSONException {
+    /**
+     * Dónde se hizo una foto o dónde se puso una carpeta (ruta en el disco; las carpetas acaban en «/»):
+     * {lat, lon, manual (puesta a mano a eso mismo), folder (viene de su carpeta), con (con quién la
+     * compartiste en el mapa al ponerla), heredado (con quién la comparte ya una carpeta que la contiene)}.
+     * Sin lat si no se sabe.
+     */
+    private JSONObject geoInfo(String user, String key) throws JSONException {
         JSONObject o = new JSONObject();
-        double[] ll = Geo.get(ctx, store);
-        boolean manual = ll != null;
+        Map<String, Geo.Entry> all = Geo.all(ctx);
+        Geo.Entry m = all.get(key);
+        double[] ll = m == null ? null : new double[]{m.lat, m.lon};
+        boolean folder = false;
         if (ll == null) {
-            String inUser = store.substring(user.length() + 1);
-            int slash = inUser.lastIndexOf('/');
-            ll = Places.known(ctx, user, slash < 0 ? "" : inUser.substring(0, slash), inUser.substring(slash + 1));
+            if (!key.endsWith("/")) {
+                String inUser = key.substring(user.length() + 1);
+                int slash = inUser.lastIndexOf('/');
+                ll = Places.known(ctx, user, slash < 0 ? "" : inUser.substring(0, slash), inUser.substring(slash + 1));
+            }
+            Geo.Entry f = Geo.folderOf(all, key); // una carpeta sin sitio: el de la carpeta de fuera
+            if (ll == null && f != null) {
+                ll = new double[]{f.lat, f.lon};
+                folder = true;
+            }
         }
         if (ll != null) {
             o.put("lat", ll[0]);
             o.put("lon", ll[1]);
         }
-        o.put("manual", manual);
+        o.put("manual", m != null);
+        o.put("folder", folder);
+        o.put("con", m == null ? new JSONArray() : new JSONArray(m.with));
+        o.put("heredado", new JSONArray(Geo.inherited(all, key)));
         return o;
     }
 
-    /** POST /api/geo: lat y lon, o clear=1 para volver a la del GPS. */
-    private void geoSet(List<String> stores, Map<String, String> params, OutputStream out) throws IOException, JSONException {
+    /** POST /api/geo: lat y lon (y con=el otro usuario para que salga también en su mapa), o clear=1. */
+    private void geoSet(String user, List<String> stores, Map<String, String> params, OutputStream out)
+            throws IOException, JSONException {
         JSONObject o = new JSONObject();
         if ("1".equals(params.get("clear"))) {
             o.put("changed", Geo.clear(ctx, stores));
@@ -1000,10 +1026,56 @@ final class HttpServer {
                 error(out, 400, "Falta el sitio: márcalo en el mapa");
                 return;
             }
-            o.put("changed", Geo.set(ctx, stores, lat, lon));
+            List<String> with = new ArrayList<String>();
+            String asked = params.get("con");
+            if (asked != null && !asked.trim().isEmpty()) {
+                String con = Users.canonical(asked.trim());
+                if (con == null || con.equals(user)) { // mejor avisar que guardarla «solo para ti» sin decirlo
+                    error(out, 400, "No hay otro usuario que se llame «" + asked.trim() + "»");
+                    return;
+                }
+                with.add(con);
+            }
+            o.put("changed", Geo.set(ctx, stores, lat, lon, with));
+            o.put("con", new JSONArray(with));
         }
         o.put("ok", true);
         json(out, 200, o);
+    }
+
+    /**
+     * «🗺 Mapa común/Fer/Viajes/Roma» + name: una foto de Fer que ha ubicado «con» este usuario (📍).
+     * Solo se sirve si de verdad está compartida en el mapa con él; no se puede listar ni cambiar nada.
+     */
+    private void mapShared(Store st, String method, String path, String user, String rel, Map<String, String> params,
+                           Map<String, String> headers, OutputStream out) throws IOException, JSONException {
+        String rest = rel.length() > Geo.VIRTUAL.length() ? rel.substring(Geo.VIRTUAL.length() + 1) : "";
+        int slash = rest.indexOf('/');
+        String owner = Users.canonical(slash < 0 ? rest : rest.substring(0, slash));
+        String sub = slash < 0 ? "" : rest.substring(slash + 1), name = cleanName(params.get("name"));
+        boolean reading = path.equals("/api/thumb") || path.equals("/api/file") || (path.equals("/api/geo") && method.equals("GET"));
+        if (!reading) {
+            error(out, 403, "Esto es del mapa común: aquí solo se pueden ver las fotos.");
+            return;
+        }
+        if (owner == null || owner.equals(user) || name == null) {
+            error(out, 404, "No encontrada");
+            return;
+        }
+        String dirRel = owner + (sub.isEmpty() ? "" : "/" + sub);
+        if (!Geo.onMapOf(ctx, dirRel + "/" + name, user)) {
+            error(out, 403, "Esa foto ya no está en el mapa común");
+            return;
+        }
+        if (path.equals("/api/thumb")) {
+            thumb(st, dirRel, name, out);
+        } else if (path.equals("/api/file")) {
+            download(st, dirRel, params, headers, method.equals("HEAD"), out);
+        } else {
+            JSONObject o = geoInfo(owner, dirRel + "/" + name);
+            o.put("owner", owner);
+            json(out, 200, o);
+        }
     }
 
     /** La carpeta de favoritos como «álbum» de la carpeta principal. */
@@ -1125,7 +1197,7 @@ final class HttpServer {
                 return;
             }
             if (method.equals("GET")) json(out, 200, geoInfo(user, stores.get(0)));
-            else geoSet(stores, params, out);
+            else geoSet(user, stores, params, out);
             return;
         }
         if (path.equals("/api/echo") || path.equals("/api/fav") || path.equals("/api/delete")) {

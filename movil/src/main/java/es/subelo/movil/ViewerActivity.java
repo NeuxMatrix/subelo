@@ -42,7 +42,7 @@ public class ViewerActivity extends Activity {
     private BoxClient bc;
     private FrameLayout stage;
     private TextView title, message;
-    private Button echo, star, place;
+    private Button echo, star, place, move, delete;
     /** Permisos de la carpeta de donde vienen las fotos («own», «ver», «subir», «fav»), o null si no se sabe (mapa). */
     private String access;
     private GestureDetector gestures;
@@ -56,6 +56,7 @@ public class ViewerActivity extends Activity {
     static void open(Context c, List<BoxClient.RemoteFile> files, int index, String access) {
         ArrayList<String> dirs = new ArrayList<String>(), names = new ArrayList<String>(), froms = new ArrayList<String>();
         long[] sizes = new long[files.size()], mtimes = new long[files.size()];
+        boolean[] owns = new boolean[files.size()];
         boolean[] favs = new boolean[files.size()];
         for (int i = 0; i < files.size(); i++) {
             dirs.add(files.get(i).dir);
@@ -64,11 +65,13 @@ public class ViewerActivity extends Activity {
             mtimes[i] = files.get(i).mtime;
             favs[i] = files.get(i).fav;
             froms.add(files.get(i).from);
+            owns[i] = files.get(i).own;
         }
         c.startActivity(new Intent(c, ViewerActivity.class)
                 .putStringArrayListExtra("dirs", dirs).putStringArrayListExtra("names", names)
                 .putExtra("sizes", sizes).putExtra("mtimes", mtimes).putExtra("index", index)
-                .putExtra("favs", favs).putStringArrayListExtra("froms", froms).putExtra("access", access));
+                .putExtra("favs", favs).putStringArrayListExtra("froms", froms).putExtra("access", access)
+                .putExtra("owns", owns));
     }
 
     @Override
@@ -83,13 +86,14 @@ public class ViewerActivity extends Activity {
             finish();
             return;
         }
-        boolean[] favs = in.getBooleanArrayExtra("favs");
+        boolean[] favs = in.getBooleanArrayExtra("favs"), owns = in.getBooleanArrayExtra("owns");
         ArrayList<String> froms = in.getStringArrayListExtra("froms");
         access = in.getStringExtra("access");
         for (int i = 0; i < names.size(); i++) {
             BoxClient.RemoteFile f = new BoxClient.RemoteFile(dirs.get(i), names.get(i), sizes[i], mtimes[i]);
             if (favs != null && i < favs.length) f.fav = favs[i];
             if (froms != null && i < froms.size()) f.from = froms.get(i);
+            if (owns != null && i < owns.length) f.own = owns[i];
             files.add(f);
         }
         index = savedInstanceState != null ? savedInstanceState.getInt("index") : in.getIntExtra("index", 0);
@@ -128,8 +132,7 @@ public class ViewerActivity extends Activity {
         });
         top.addView(star, Brutal.spaced(this, -2, -2, 0));
         if (access == null) star.setVisibility(View.GONE); // desde el mapa no sabemos si ya lo es
-        boolean editable = access == null || "own".equals(access); // mover y borrar: solo lo tuyo
-        Button move = Brutal.button(this, "↦", Brutal.PAPER, Brutal.BLACK, new View.OnClickListener() {
+        move = Brutal.button(this, "↦", Brutal.PAPER, Brutal.BLACK, new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 if (files.isEmpty()) return;
@@ -138,17 +141,13 @@ public class ViewerActivity extends Activity {
             }
         });
         top.addView(move, Brutal.spaced(this, -2, -2, 0));
-        Button delete = Brutal.button(this, "🗑", 0xFFE5322D, Brutal.SNOW, new View.OnClickListener() {
+        delete = Brutal.button(this, "🗑", 0xFFE5322D, Brutal.SNOW, new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 confirmDelete();
             }
         });
         top.addView(delete, Brutal.spaced(this, -2, -2, 0));
-        if (!editable) {
-            move.setVisibility(View.GONE);
-            delete.setVisibility(View.GONE);
-        }
         top.addView(dl, Brutal.spaced(this, -2, -2, 0));
         root.addView(top, new FrameLayout.LayoutParams(-1, -2, Gravity.TOP));
 
@@ -229,10 +228,15 @@ public class ViewerActivity extends Activity {
     /** La foto a la que se está eligiendo sitio (📍), mientras está abierto el mapa. */
     private BoxClient.RemoteFile geoFile;
 
-    /** ¿Se puede cambiar dónde se hizo? Lo tuyo (desde el mapa también lo es), y en Favoritos lo tuyo. */
+    /** ¿Se puede mover o borrar? Solo lo tuyo (en el mapa, las del otro solo se ven). */
+    private boolean editable(BoxClient.RemoteFile f) {
+        return f.own && (access == null || "own".equals(access));
+    }
+
+    /** ¿Se puede cambiar dónde se hizo? Lo tuyo: en tus carpetas, en el mapa y en Favoritos. */
     private boolean canPlace(BoxClient.RemoteFile f) {
         boolean media = Downloader.isImage(f.name) || Downloader.isVideo(f.name);
-        return media && (access == null || "own".equals(access) || "fav".equals(access) && f.own);
+        return media && f.own && (access == null || "own".equals(access) || "fav".equals(access));
     }
 
     private void pickPlace() {
@@ -242,16 +246,20 @@ public class ViewerActivity extends Activity {
             @Override
             public void run() {
                 org.json.JSONObject info = null;
+                String other = null;
                 try {
                     info = bc.geoOf(f.dir, f.name);
+                    List<String> o = bc.others();
+                    if (!o.isEmpty()) other = o.get(0);
                 } catch (IOException ignored) {
                 }
                 final org.json.JSONObject in = info;
+                final String otherUser = other;
                 runOnUiThread(new Runnable() {
                     @Override
                     public void run() {
                         geoFile = f;
-                        startActivityForResult(MapActivity.pick(ViewerActivity.this, in, 1), REQ_GEO);
+                        startActivityForResult(MapActivity.pick(ViewerActivity.this, in, 1, 0, otherUser), REQ_GEO);
                     }
                 });
             }
@@ -283,18 +291,20 @@ public class ViewerActivity extends Activity {
             if (resultCode != RESULT_OK || data == null || f == null) return;
             final boolean clear = data.getBooleanExtra("clear", false);
             final double lat = data.getDoubleExtra("lat", Double.NaN), lon = data.getDoubleExtra("lon", Double.NaN);
+            final String con = data.getStringExtra("con");
             bg.execute(new Runnable() {
                 @Override
                 public void run() {
                     String err = null;
                     try {
                         if (clear) bc.geoClear(f.dir, Collections.singletonList(f.name));
-                        else bc.geo(f.dir, Collections.singletonList(f.name), lat, lon);
+                        else bc.geo(f.dir, Collections.singletonList(f.name), lat, lon, con);
                     } catch (IOException e) {
                         err = e.getMessage();
                     }
                     final String msg = err != null ? err : clear ? "Quitada la ubicación puesta a mano"
-                            : "📍 Guardado: ya sale en ese sitio del mapa";
+                            : con != null && !con.isEmpty() ? "📍 Guardado para los dos: sale en tu mapa y en el de " + con
+                            : "📍 Guardado solo para ti: ya sale en ese sitio de tu mapa";
                     runOnUiThread(new Runnable() {
                         @Override
                         public void run() {
@@ -419,6 +429,8 @@ public class ViewerActivity extends Activity {
         showStar(f);
         echo.setVisibility(Downloader.isImage(f.name) ? View.VISIBLE : View.INVISIBLE);
         place.setVisibility(canPlace(f) ? View.VISIBLE : View.GONE);
+        move.setVisibility(editable(f) ? View.VISIBLE : View.GONE);
+        delete.setVisibility(editable(f) ? View.VISIBLE : View.GONE);
         stage.removeAllViews();
         message.setText("");
         if (bc == null) {

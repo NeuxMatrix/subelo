@@ -69,6 +69,7 @@ public class ExploreActivity extends Activity {
     private TextView pathText;
     private Button downloadButton, uploadButton, folderButton, moveButton, deleteButton, renameButton, shareButton, echoButton, favButton, geoButton;
     /** Las fotos a las que se está eligiendo sitio (📍), mientras está abierto el mapa. */
+    /** Lo que se está ubicando (📍) mientras está abierto el mapa: archivos, y carpetas acabadas en «/». */
     private ArrayList<String> geoNames;
     private LinearLayout echoRow;
     private BoxClient.Listing current = new BoxClient.Listing();
@@ -346,8 +347,9 @@ public class ExploreActivity extends Activity {
             for (BoxClient.RemoteFile f : selectedFiles()) if (!f.fav) allFav = false;
             favButton.setText(current.fav() || allFav ? "☆ QUITAR DE FAVORITOS" : "⭐ FAVORITO");
             favButton.setVisibility(nFiles > 0 ? View.VISIBLE : View.GONE);
-            geoButton.setVisibility(geoSelection().isEmpty() ? View.GONE : View.VISIBLE);
-            echoRow.setVisibility(nFiles > 0 ? View.VISIBLE : View.GONE);
+            boolean geo = !geoSelection().isEmpty();
+            geoButton.setVisibility(geo ? View.VISIBLE : View.GONE);
+            echoRow.setVisibility(nFiles > 0 || geo ? View.VISIBLE : View.GONE);
         } else {
             pathText.setText(where + "\n" + files.size() + " ARCHIVOS"
                     + ("virtual".equals(current.access) ? ""
@@ -429,12 +431,21 @@ public class ExploreActivity extends Activity {
             if (resultCode != RESULT_OK || data == null || names == null || names.isEmpty()) return;
             final boolean clear = data.getBooleanExtra("clear", false);
             final double lat = data.getDoubleExtra("lat", Double.NaN), lon = data.getDoubleExtra("lon", Double.NaN);
-            String what = names.size() == 1 ? "1 foto" : names.size() + " fotos";
-            run(clear ? "Quitada la ubicación puesta a mano (" + what + ")" : "📍 " + what + " en ese sitio del mapa (el archivo no se toca)", new Op() {
+            final String con = data.getStringExtra("con");
+            final List<String> plain = new ArrayList<String>();
+            int nDirs = 0;
+            for (String n : names) {
+                if (n.endsWith("/")) nDirs++;
+                plain.add(n.endsWith("/") ? n.substring(0, n.length() - 1) : n);
+            }
+            String what = geoWhat(names.size() - nDirs, nDirs);
+            run(clear ? "Quitada la ubicación puesta a mano (" + what + ")"
+                    : con != null && !con.isEmpty() ? "📍 " + what + ": guardado para los dos, sale en tu mapa y en el de " + con
+                    : "📍 " + what + ": guardado solo para ti, sale en ese sitio de tu mapa", new Op() {
                 @Override
                 public void go(BoxClient c) throws IOException {
-                    if (clear) c.geoClear(path, names);
-                    else c.geo(path, names, lat, lon);
+                    if (clear) c.geoClear(path, plain);
+                    else c.geo(path, plain, lat, lon, con);
                 }
             });
             return;
@@ -552,14 +563,31 @@ public class ExploreActivity extends Activity {
                 .show();
     }
 
-    /** Fotos y vídeos elegidos a los que se puede poner sitio: los tuyos (en Favoritos, solo los tuyos). */
+    /**
+     * Lo elegido a lo que se puede poner sitio: tus fotos y vídeos (en Favoritos, solo los tuyos) y tus
+     * carpetas enteras (acabadas en «/»: lo de dentro sin GPS va a ese sitio).
+     */
     private ArrayList<String> geoSelection() {
         ArrayList<String> l = new ArrayList<String>();
         if (!current.own() && !current.fav()) return l;
         for (BoxClient.RemoteFile f : selectedFiles()) {
             if ((Downloader.isImage(f.name) || Downloader.isVideo(f.name)) && (current.own() || f.own)) l.add(f.name);
         }
+        if (current.own()) {
+            for (Object e : entries) if (e instanceof String && !special(e) && selected.contains(key(e))) l.add(key(e));
+        }
         return l;
+    }
+
+    /** «3 fotos», «1 carpeta», «2 fotos y 1 carpeta». */
+    static String geoWhat(int nFiles, int nDirs) {
+        StringBuilder sb = new StringBuilder();
+        if (nFiles > 0) sb.append(nFiles).append(nFiles == 1 ? " foto" : " fotos");
+        if (nDirs > 0) {
+            if (sb.length() > 0) sb.append(" y ");
+            sb.append(nDirs).append(nDirs == 1 ? " carpeta" : " carpetas");
+        }
+        return sb.toString();
     }
 
     /** 📍: pregunta al box dónde está la primera (para empezar ahí) y abre el mapa para elegir el sitio. */
@@ -571,19 +599,27 @@ public class ExploreActivity extends Activity {
             @Override
             public void run() {
                 org.json.JSONObject info = null;
+                String other = null;
                 try {
                     if (bc == null) bc = BoxClient.connect(ExploreActivity.this);
-                    info = bc.geoOf(p, names.get(0));
+                    String first = names.get(0);
+                    info = bc.geoOf(p, first.endsWith("/") ? first.substring(0, first.length() - 1) : first);
+                    List<String> o = bc.others();
+                    if (!o.isEmpty()) other = o.get(0); // a quién preguntar «¿también para él?»
                 } catch (IOException ignored) {
                     // sin saber dónde estaba: el mapa empieza en el último sitio que pusiste
                 }
                 final org.json.JSONObject in = info;
+                final String otherUser = other;
+                int dirs = 0;
+                for (String n : names) if (n.endsWith("/")) dirs++;
+                final int nDirs = dirs;
                 runOnUiThread(new Runnable() {
                     @Override
                     public void run() {
                         if (!p.equals(path)) return;
                         geoNames = names;
-                        startActivityForResult(MapActivity.pick(ExploreActivity.this, in, names.size()), REQ_GEO);
+                        startActivityForResult(MapActivity.pick(ExploreActivity.this, in, names.size(), nDirs, otherUser), REQ_GEO);
                     }
                 });
             }

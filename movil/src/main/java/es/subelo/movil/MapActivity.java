@@ -33,11 +33,19 @@ import java.util.List;
 public class MapActivity extends Activity {
     private static final String HOST = "subelo.local";
 
-    /** Para startActivityForResult: elegir el sitio de n fotos; info = lo que dice el box ({lat, lon, manual}). */
-    static Intent pick(Context c, JSONObject info, int n) {
-        Intent i = new Intent(c, MapActivity.class).putExtra("pick", true).putExtra("n", n);
+    /**
+     * Para startActivityForResult: elegir el sitio de n cosas (de ellas, «folders» carpetas); info = lo que
+     * dice el box ({lat, lon, manual, con}); other = el otro usuario, para preguntar «solo yo / con él».
+     */
+    static Intent pick(Context c, JSONObject info, int n, int folders, String other) {
+        Intent i = new Intent(c, MapActivity.class).putExtra("pick", true).putExtra("n", n).putExtra("folders", folders);
         if (info != null && info.has("lat")) i.putExtra("lat", info.optDouble("lat")).putExtra("lon", info.optDouble("lon"));
         if (info != null) i.putExtra("manual", info.optBoolean("manual"));
+        if (info != null && info.optJSONArray("con") != null) i.putExtra("con", info.optJSONArray("con").optString(0, ""));
+        if (info != null && info.optJSONArray("heredado") != null) {
+            i.putExtra("heredado", info.optJSONArray("heredado").optString(0, ""));
+        }
+        if (other != null) i.putExtra("other", other);
         return i;
     }
 
@@ -79,7 +87,11 @@ public class MapActivity extends Activity {
         String url = "https://" + HOST + "/mapa.html?app=1&tema=" + (Brutal.dark ? "oscuro" : "claro");
         Intent in = getIntent();
         if (in.getBooleanExtra("pick", false)) {
-            url += "&pick=1&n=" + in.getIntExtra("n", 1) + (in.getBooleanExtra("manual", false) ? "&manual=1" : "");
+            url += "&pick=1&n=" + in.getIntExtra("n", 1) + "&carpetas=" + in.getIntExtra("folders", 0)
+                    + (in.getBooleanExtra("manual", false) ? "&manual=1" : "")
+                    + (in.getStringExtra("other") != null ? "&otro=" + Uri.encode(in.getStringExtra("other")) : "")
+                    + (in.getStringExtra("con") != null ? "&con=" + Uri.encode(in.getStringExtra("con")) : "")
+                    + (in.getStringExtra("heredado") != null ? "&heredado=" + Uri.encode(in.getStringExtra("heredado")) : "");
             if (in.hasExtra("lat")) {
                 url += String.format(java.util.Locale.US, "&lat=%.6f&lon=%.6f", in.getDoubleExtra("lat", 0), in.getDoubleExtra("lon", 0));
             }
@@ -145,10 +157,10 @@ public class MapActivity extends Activity {
 
     /** Lo que la página puede pedir a la app. */
     private final class Bridge {
-        /** Elegir sitio: el elegido. */
+        /** Elegir sitio: el elegido, y con quién se comparte en el mapa («» = solo yo). */
         @JavascriptInterface
-        public void sitio(final double lat, final double lon) {
-            done(new Intent().putExtra("lat", lat).putExtra("lon", lon));
+        public void sitio(final double lat, final double lon, final String con) {
+            done(new Intent().putExtra("lat", lat).putExtra("lon", lon).putExtra("con", con == null ? "" : con));
         }
 
         /** Elegir sitio: quitar la ubicación puesta a mano. */
@@ -181,7 +193,10 @@ public class MapActivity extends Activity {
                 JSONArray a = new JSONArray(json);
                 for (int i = 0; i < a.length(); i++) {
                     JSONArray x = a.getJSONArray(i);
-                    files.add(new BoxClient.RemoteFile(x.getString(0), x.getString(1), x.optLong(2, -1), 0));
+                    BoxClient.RemoteFile f = new BoxClient.RemoteFile(x.getString(0), x.getString(1), x.optLong(2, -1), 0);
+                    f.own = x.optInt(3, 1) == 1; // las del mapa común son del otro: solo se ven
+                    if (!f.own && !x.optString(4).isEmpty()) f.from = "🔒 de " + x.optString(4);
+                    files.add(f);
                 }
             } catch (Exception e) {
                 return;

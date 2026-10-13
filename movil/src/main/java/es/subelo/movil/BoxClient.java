@@ -368,12 +368,16 @@ final class BoxClient {
         return call("GET", "/api/geo?path=" + enc(path) + "&name=" + enc(name), 15000);
     }
 
-    /** Pone a mano dónde se hicieron (el archivo no se toca: lo guarda el box para el mapa). */
-    void geo(String path, List<String> names, double lat, double lon) throws IOException {
+    /**
+     * Pone a mano dónde se hicieron fotos o carpetas enteras (el archivo no se toca: lo guarda el box para
+     * el mapa). con: el otro usuario, para que salga también en su mapa, o null.
+     */
+    void geo(String path, List<String> names, double lat, double lon, String con) throws IOException {
         List<String[]> f = new ArrayList<String[]>();
         f.add(new String[]{"path", path});
         f.add(new String[]{"lat", String.valueOf(lat)});
         f.add(new String[]{"lon", String.valueOf(lon)});
+        if (con != null && !con.isEmpty()) f.add(new String[]{"con", con});
         for (String n : names) f.add(new String[]{"name", n});
         form("/api/geo", f);
     }
@@ -700,6 +704,11 @@ final class BoxClient {
         } catch (JSONException e) {
             if (code >= 400) throw new BoxException(code, "Error " + code + " del box");
             throw new IOException("Respuesta no válida del box");
+        }
+        // «No encontrado» solo lo dice el box cuando no conoce lo que se le pide: es más antiguo que el móvil
+        if (code == 404 && "No encontrado".equals(o.optString("error"))) {
+            throw new BoxException(404, "El box tiene una versión antigua y aún no sabe hacer esto. En la tele abre "
+                    + "«Súbelo Servidor», pulsa «Buscar actualizaciones» e instala la nueva.");
         }
         if (code >= 400) throw new BoxException(code, o.optString("error", "Error " + code + " del box"));
         return o;

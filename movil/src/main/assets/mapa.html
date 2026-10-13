@@ -39,6 +39,9 @@
   #years:empty { display: none; }
   #years button { background: var(--surface); color: var(--ink); border: 3px solid var(--ink); box-shadow: 3px 3px 0 var(--ink); flex: none; }
   #years button.on { background: var(--purple); color: #fff; }
+  #years .sep { flex: none; width: 3px; background: var(--ink); margin: 0 4px; }
+  .ph.otro { border-color: var(--orange); box-shadow: 4px 4px 0 var(--orange); }
+  .ph .con { position: absolute; left: -3px; top: -3px; background: var(--lilac); color: var(--ink); border: 3px solid var(--ink); font: 700 10px "Space Mono", monospace; padding: 0 3px; }
   #map { flex: 1; min-height: 0; background: var(--cream); }
   .leaflet-container { font-family: "Space Grotesk", system-ui, sans-serif; background: var(--cream); }
   .leaflet-bar a { background: var(--surface); color: var(--ink); border-bottom-color: var(--ink); font-family: "Archivo Black", sans-serif; }
@@ -71,6 +74,8 @@
   #pickBar { display: none; gap: 10px; padding: 10px 12px; background: var(--black); border-top: 3px solid var(--ink); flex-wrap: wrap; align-items: center; }
   #pickBar .hint { color: var(--paper); flex: 1; min-width: 150px; font-size: .72rem; }
   #pickBar button:disabled { opacity: .45; cursor: default; }
+  #pickBar #pickCon { background: var(--purple) !important; border-color: var(--purple) !important; color: #fff; }
+  #pickBar button.was { outline: 3px dashed var(--paper); outline-offset: 2px; }
   .pin { font-size: 40px; line-height: 40px; text-align: center; filter: drop-shadow(2px 3px 0 #111); }
   #prev { left: 10px; } #next { right: 10px; }
   .main { background: var(--orange) !important; border-color: var(--orange) !important; }
@@ -90,7 +95,7 @@
   <div id="found"></div>
   <div id="msg"><h2 id="msgT"></h2><p id="msgP"></p></div>
 </div>
-<div id="pickBar"><span class="hint mono" id="pickHint">Toca en el mapa donde se hizo</span><button id="pickClear" class="mono" hidden>↺ Quitar la puesta a mano</button><button id="pickNo" class="mono">Cancelar</button><button id="pickOk" class="mono main" disabled>✓ Guardar aquí</button></div>
+<div id="pickBar"><span class="hint mono" id="pickHint">Toca en el mapa donde se hizo</span><button id="pickClear" class="mono" hidden>↺ Quitar la puesta a mano</button><button id="pickNo" class="mono">Cancelar</button><button id="pickOk" class="mono main" disabled>✓ Guardar aquí</button><button id="pickCon" class="mono main" disabled hidden></button></div>
 <div id="viewer">
   <div class="bar mono"><span id="vname"></span><a class="btn" id="vdir">📁 Carpeta</a><button id="vgeo" hidden>📍 Cambiar sitio</button><a class="btn main" id="vdl" download>⬇</a><button id="vclose">✕ Cerrar</button></div>
   <div class="stage"><div id="vbody"></div><button class="nav" id="prev">‹</button><button class="nav" id="next">›</button></div>
@@ -101,15 +106,16 @@
 const $ = id => document.getElementById(id);
 const enc = encodeURIComponent;
 const VIDEO = /\.(mp4|mov|3gp|mkv|webm|m4v|avi)$/i;
+const MAPA_COMUN = '🗺 Mapa común';
 const dark = () => document.documentElement.getAttribute('data-theme') === 'dark';
 const fmt = n => n.toLocaleString('es-ES');
-let all = [], year = '', fitted = false, layer = null, lastKey = '', vlist = [], vi = -1, pollT = 0;
+let all = [], year = '', whose = '', fitted = false, layer = null, lastKey = '', vlist = [], vi = -1, pollT = 0;
 
 if (EN_APP || EMBED) { $('back').hidden = true; $('theme').hidden = true; }
 // quien abrió esta página: la web del box (otro marco de la misma dirección) o la app del móvil
 function tell(msg) {
   if (EN_APP && window.SubeloApp) {
-    if (msg.subelo === 'sitio') SubeloApp.sitio(msg.lat, msg.lon);
+    if (msg.subelo === 'sitio') SubeloApp.sitio(msg.lat, msg.lon, msg.con || '');
     else if (msg.subelo === 'quitar') SubeloApp.quitar();
     else if (msg.subelo === 'cancelar') SubeloApp.cancelar();
   } else if (EMBED && parent !== window) parent.postMessage(msg, location.origin);
@@ -132,14 +138,20 @@ function icon(p, count) {
   const size = count ? 62 : 50;
   return L.divIcon({
     className: '', iconSize: [size, size], iconAnchor: [size / 2, size / 2],
-    html: '<div class="ph' + (VIDEO.test(p.n) ? ' vid' : '') + '"><img loading="lazy" src="' + thumb(p) + '" alt="">'
-      + (count ? '<span class="n">' + (count > 999 ? Math.round(count / 1000) + 'k' : count) + '</span>' : '') + '</div>'
+    html: '<div class="ph' + (VIDEO.test(p.n) ? ' vid' : '') + (p.o ? ' otro' : '') + '"><img loading="lazy" src="' + thumb(p) + '" alt="">'
+      + (count ? '<span class="n">' + (count > 999 ? Math.round(count / 1000) + 'k' : count) + '</span>' : '')
+      + (!count && !p.o && p.c ? '<span class="con">👥</span>' : '') + '</div>'
   });
 }
 
+// lo que se ve: por año y de quién (todas, las mías o las del otro)
+function visible() {
+  return all.filter(p => (!year || (p.t || '').startsWith(year))
+    && (!whose || (whose === 'mias' ? !p.o : p.o === whose)));
+}
 function build() {
-  const list = year ? all.filter(p => (p.t || '').startsWith(year)) : all;
-  const key = year + '|' + list.length;
+  const list = visible();
+  const key = year + '|' + whose + '|' + list.length;
   if (key === lastKey) return;
   lastKey = key;
   if (layer) map.removeLayer(layer);
@@ -168,15 +180,22 @@ function build() {
 
 function years() {
   const ys = [...new Set(all.map(p => (p.t || '').slice(0, 4)).filter(Boolean))].sort().reverse();
+  const others = [...new Set(all.map(p => p.o).filter(Boolean))].sort();
   const box = $('years');
-  if (ys.length < 2) { box.innerHTML = ''; return; }
   box.innerHTML = '';
-  for (const y of [''].concat(ys)) {
+  const add = (label, on, click) => {
     const b = document.createElement('button');
-    b.textContent = y || 'Todas';
-    b.className = y === year ? 'on' : '';
-    b.onclick = () => { year = y; years(); build(); };
+    b.textContent = label; b.className = on ? 'on' : ''; b.onclick = click;
     box.appendChild(b);
+  };
+  if (others.length) { // mapa común: las de los dos, las mías o las del otro
+    add('👥 Todas', !whose, () => { whose = ''; years(); build(); });
+    add('Mías', whose === 'mias', () => { whose = 'mias'; years(); build(); });
+    for (const o of others) add('De ' + o, whose === o, () => { whose = o; years(); build(); });
+  }
+  if (ys.length >= 2) {
+    if (others.length) { const sep = document.createElement('span'); sep.className = 'sep'; box.appendChild(sep); }
+    for (const y of [''].concat(ys)) add(y || 'Todos los años', y === year, () => { year = y; years(); build(); });
   }
 }
 
@@ -200,12 +219,14 @@ async function load() {
     pollT = setTimeout(load, 8000);
     return;
   }
-  all = j.places.map(a => ({d: a[0], n: a[1], la: a[2], lo: a[3], t: a[4], s: a[5], m: a[6] === 1}));
+  // o: de quién es (vacío si es tuya); c: compartida en el mapa común
+  all = j.places.map(a => ({d: a[0], n: a[1], la: a[2], lo: a[3], t: a[4], s: a[5], m: a[6] === 1, o: a[7] || '', c: a[8] === 1}));
   years();
   build();
   $('stat').textContent = j.scanning
     ? 'Buscando ubicaciones… ' + fmt(j.seen) + ' revisadas'
-    : fmt(all.length) + ' de ' + fmt(j.media) + ' con ubicación';
+    : fmt(all.filter(p => !p.o).length) + ' de ' + fmt(j.media) + ' con ubicación'
+      + (all.some(p => p.o) ? ' · +' + fmt(all.filter(p => p.o).length) + ' del mapa común' : '');
   if (all.length) message();
   else if (j.scanning) message('Buscando…', 'Estoy leyendo dónde se hizo cada foto. La primera vez tarda un poco; el mapa se va llenando solo.');
   else if (!j.media) message('Aún no hay fotos', 'Cuando subas fotos al box aparecerán aquí, en el sitio donde se hicieron.');
@@ -223,25 +244,27 @@ addEventListener('message', e => {
 function openAt(p) {
   // las fotos que se ven ahora en el mapa, por fecha, para poder pasar con ‹ ›
   const b = map.getBounds();
-  let list = (year ? all.filter(x => (x.t || '').startsWith(year)) : all).filter(x => b.contains([x.la, x.lo]));
+  let list = visible().filter(x => b.contains([x.la, x.lo]));
   list.sort((a, c) => (a.t || '').localeCompare(c.t || '') || a.n.localeCompare(c.n));
   if (list.length > 300) {
     const i = list.indexOf(p);
     list = list.slice(Math.max(0, i - 150), Math.max(0, i - 150) + 300);
   }
   const idx = Math.max(0, list.indexOf(p));
-  if (EN_APP && window.SubeloApp) { SubeloApp.ver(JSON.stringify(list.map(x => [x.d, x.n, x.s])), idx); return; }
+  if (EN_APP && window.SubeloApp) { SubeloApp.ver(JSON.stringify(list.map(x => [x.d, x.n, x.s, x.o ? 0 : 1, x.o])), idx); return; }
   vlist = list; show(idx);
 }
 function show(i) {
   if (i < 0 || i >= vlist.length) return;
   vi = i;
   const p = vlist[i], url = '/api/file?path=' + enc(p.d) + '&name=' + enc(p.n);
-  $('vname').textContent = (i + 1) + '/' + vlist.length + ' · ' + (p.t || '') + ' · ' + (p.d ? p.d + '/' : '') + p.n
-    + (p.m ? ' · 📍 puesta a mano' : '');
+  const where = p.o ? 'De ' + p.o + ' · ' + p.n : (p.d ? p.d + '/' : '') + p.n;
+  $('vname').textContent = (i + 1) + '/' + vlist.length + ' · ' + (p.t || '') + ' · ' + where
+    + (p.m ? ' · 📍 puesta a mano' : '') + (!p.o && p.c ? ' · 👥 en el mapa común' : '');
   $('vdl').href = url + '&download=1';
   $('vdir').href = '/#fotos/' + enc(p.d);
-  $('vgeo').hidden = !EMBED;
+  $('vdir').hidden = p.d === MAPA_COMUN || p.d.startsWith(MAPA_COMUN + '/'); // esas no se abren como carpeta
+  $('vgeo').hidden = !EMBED || !!p.o; // solo el dueño la cambia de sitio
   $('vbody').innerHTML = '';
   const el = document.createElement(VIDEO.test(p.n) ? 'video' : 'img');
   if (el.tagName === 'VIDEO') { el.controls = true; el.autoplay = true; }
@@ -282,10 +305,21 @@ themeLabel();
 // ---------- elegir dónde se hizo (pick=1) ----------
 function pickMode() {
   const q = new URLSearchParams(location.search), LAST = 'subelo-ultimo-sitio';
-  const n = parseInt(q.get('n') || '1', 10) || 1;
+  const n = parseInt(q.get('n') || '1', 10) || 1, folders = parseInt(q.get('carpetas') || '0', 10) || 0;
+  const otro = q.get('otro') || '', con = (q.get('con') || '').split(',').filter(Boolean);
+  const heredado = (q.get('heredado') || '').split(',').filter(Boolean); // ya la comparte una carpeta de fuera
   $('years').style.display = 'none';
   document.querySelector('h1').textContent = '¿Dónde se hizo?';
-  $('stat').textContent = n === 1 ? '1 foto' : n + ' fotos';
+  const files = n - folders;
+  $('stat').textContent = [files ? (files === 1 ? '1 foto' : files + ' fotos') : '',
+    folders ? (folders === 1 ? '1 carpeta' : folders + ' carpetas') : ''].filter(Boolean).join(' y ');
+  // para quién: solo para mí, o también en el mapa del otro (marcado: lo que tenía)
+  if (otro) {
+    $('pickOk').textContent = '✓ Solo yo';
+    $('pickCon').textContent = '✓ Con ' + otro;
+    $('pickCon').hidden = false;
+    if (q.get('manual') === '1') (con.includes(otro) ? $('pickCon') : $('pickOk')).classList.add('was');
+  }
   $('pickTop').style.display = 'flex';
   $('pickBar').style.display = 'flex';
   $('pickClear').hidden = q.get('manual') !== '1';
@@ -301,8 +335,11 @@ function pickMode() {
   }
   function hint() {
     const ll = pin.getLatLng();
-    $('pickHint').textContent = ll.lat.toFixed(5) + ', ' + ll.lng.toFixed(5) + ' · arrastra el 📍 para afinar';
-    $('pickOk').disabled = false;
+    $('pickHint').textContent = ll.lat.toFixed(5) + ', ' + ll.lng.toFixed(5) + ' · arrastra el 📍 para afinar'
+      + (folders ? ' · las fotos sin GPS de la carpeta irán aquí' : '')
+      + (otro && heredado.includes(otro) ? ' · está dentro de una carpeta que ya sale en el mapa de ' + otro
+        : otro ? ' · ¿solo para ti o también para ' + otro + '?' : '');
+    $('pickOk').disabled = $('pickCon').disabled = false;
   }
   map.on('click', e => { $('found').style.display = 'none'; put(e.latlng.lat, e.latlng.lng); });
   const lat = parseFloat(q.get('lat')), lon = parseFloat(q.get('lon'));
@@ -346,17 +383,19 @@ function pickMode() {
       box.appendChild(d);
     }
   };
-  $('pickOk').onclick = () => {
+  function save(withOther) {
     if (!pin) return;
     const ll = pin.getLatLng(), lat = +ll.lat.toFixed(6), lon = +(((ll.lng + 540) % 360) - 180).toFixed(6);
     try { localStorage.setItem(LAST, JSON.stringify([lat, lon])); } catch (e) {}
-    $('pickOk').disabled = true;
-    tell({subelo: 'sitio', lat, lon});
-  };
+    $('pickOk').disabled = $('pickCon').disabled = true;
+    tell({subelo: 'sitio', lat, lon, con: withOther ? otro : ''});
+  }
+  $('pickOk').onclick = () => save(false);
+  $('pickCon').onclick = () => save(true);
   $('pickClear').onclick = () => tell({subelo: 'quitar'});
   $('pickNo').onclick = () => tell({subelo: 'cancelar'});
   document.addEventListener('keydown', e => { if (e.key === 'Escape') tell({subelo: 'cancelar'}); });
-  if (!EN_APP && !EMBED) { $('pickOk').hidden = $('pickNo').hidden = $('pickClear').hidden = true; } // suelta: solo para mirar
+  if (!EN_APP && !EMBED) { $('pickOk').hidden = $('pickCon').hidden = $('pickNo').hidden = $('pickClear').hidden = true; } // suelta: solo para mirar
 }
 if (PICK) pickMode(); else load();
 </script>
