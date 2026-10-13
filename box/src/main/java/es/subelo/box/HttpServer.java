@@ -64,6 +64,9 @@ import javax.net.ssl.SSLSocketFactory;
  * POST /api/fav              path=&name=…&on=1|0: marca o quita favoritos. Se ven en la carpeta especial
  *                            «⭐ Favoritos» (path=⭐ Favoritos), que solo apunta a los archivos: no los copia,
  *                            y ahí «borrar» solo los quita de favoritos.
+ * GET  /api/geo              path=&name=: dónde se hizo ({lat, lon, manual}; sin lat si no se sabe)
+ * POST /api/geo              path=&name=…&lat=&lon= (o clear=1): pone a mano dónde se hizo (solo lo tuyo). No
+ *                            toca el archivo: se guarda en el box y el mapa la usa en lugar del GPS de la foto.
  * POST /api/echo             path=&name=…: copia esas fotos a la carpeta «Echo» (va al álbum de Amazon Photos)
  * GET  /api/amazon           estado del puente con Amazon Photos (EchoSync)
  * POST /api/amazon/connect   cookie=&tld=: guarda la sesión de Amazon (entrada desde el móvil); devuelve álbumes
@@ -580,6 +583,21 @@ final class HttpServer {
             o.put("ok", true);
             o.put("changed", Favorites.set(ctx, user, stores, !"0".equals(params.get("on"))));
             json(out, 200, o);
+        } else if (path.equals("/api/geo")) {
+            Object d = st.dir(dirRel, false);
+            List<String> stores = new ArrayList<String>();
+            for (String n : names) {
+                if (d != null && existingName(n) && st.fileSize(d, n) >= 0) stores.add(dirRel + "/" + n);
+            }
+            if (stores.isEmpty()) {
+                error(out, 400, "No has elegido ninguna foto");
+                return;
+            }
+            if (method.equals("GET")) {
+                json(out, 200, geoInfo(user, stores.get(0)));
+            } else {
+                geoSet(stores, params, out);
+            }
         } else if (path.equals("/api/albums")) {
             Object d = st.dir(dirRel, rel.isEmpty());
             if (d == null) {
@@ -652,6 +670,7 @@ final class HttpServer {
                     st.delete(d, n);
                     Shares.deleted(ctx, user, rel.isEmpty() ? n : rel + "/" + n);
                     Favorites.deleted(ctx, dirRel + "/" + n);
+                    Geo.deleted(ctx, dirRel + "/" + n);
                     ok++;
                 }
                 o.put("deleted", ok);
@@ -678,6 +697,7 @@ final class HttpServer {
                     String fin = st.move(d, n, dest);
                     Shares.moved(ctx, user, rel.isEmpty() ? n : rel + "/" + n, to.isEmpty() ? fin : to + "/" + fin);
                     Favorites.moved(ctx, dirRel + "/" + n, (to.isEmpty() ? user : user + "/" + to) + "/" + fin);
+                    Geo.moved(ctx, dirRel + "/" + n, (to.isEmpty() ? user : user + "/" + to) + "/" + fin);
                     arr.put(fin);
                 }
                 o.put("moved", arr);
@@ -694,6 +714,7 @@ final class HttpServer {
                 }
                 Shares.moved(ctx, user, rel.isEmpty() ? names.get(0) : rel + "/" + names.get(0), rel.isEmpty() ? nn : rel + "/" + nn);
                 Favorites.moved(ctx, dirRel + "/" + names.get(0), dirRel + "/" + nn);
+                Geo.moved(ctx, dirRel + "/" + names.get(0), dirRel + "/" + nn);
                 o.put("name", nn);
             }
             o.put("ok", true);
@@ -944,6 +965,47 @@ final class HttpServer {
         out.flush();
     }
 
+    /** Dónde se hizo una foto (ruta en el disco): la puesta a mano o la del GPS, si ya se ha leído. */
+    private JSONObject geoInfo(String user, String store) throws JSONException {
+        JSONObject o = new JSONObject();
+        double[] ll = Geo.get(ctx, store);
+        boolean manual = ll != null;
+        if (ll == null) {
+            String inUser = store.substring(user.length() + 1);
+            int slash = inUser.lastIndexOf('/');
+            ll = Places.known(ctx, user, slash < 0 ? "" : inUser.substring(0, slash), inUser.substring(slash + 1));
+        }
+        if (ll != null) {
+            o.put("lat", ll[0]);
+            o.put("lon", ll[1]);
+        }
+        o.put("manual", manual);
+        return o;
+    }
+
+    /** POST /api/geo: lat y lon, o clear=1 para volver a la del GPS. */
+    private void geoSet(List<String> stores, Map<String, String> params, OutputStream out) throws IOException, JSONException {
+        JSONObject o = new JSONObject();
+        if ("1".equals(params.get("clear"))) {
+            o.put("changed", Geo.clear(ctx, stores));
+        } else {
+            double lat, lon;
+            try {
+                lat = Double.parseDouble(params.get("lat"));
+                lon = Double.parseDouble(params.get("lon"));
+            } catch (RuntimeException e) {
+                lat = lon = Double.NaN;
+            }
+            if (!Geo.valid(lat, lon)) {
+                error(out, 400, "Falta el sitio: márcalo en el mapa");
+                return;
+            }
+            o.put("changed", Geo.set(ctx, stores, lat, lon));
+        }
+        o.put("ok", true);
+        json(out, 200, o);
+    }
+
     /** La carpeta de favoritos como «álbum» de la carpeta principal. */
     private JSONObject favAlbum(Store st, String user) throws IOException, JSONException {
         JSONObject a = new JSONObject();
@@ -1016,6 +1078,7 @@ final class HttpServer {
                     fo.put("size", fi.size);
                     fo.put("mtime", fi.mtime);
                     fo.put("fav", true);
+                    fo.put("own", f.store.startsWith(user + "/"));
                     fo.put("from", f.dir.equals(user) ? "" : f.dir.startsWith(user + "/") ? f.dir.substring(user.length() + 1)
                             : f.dir.replaceFirst("/", ": ")); // lo de otro: «Julss: Viajes/Roma»
                     files.put(fo);
@@ -1048,6 +1111,21 @@ final class HttpServer {
                 if (d != null) items.add(new Object[]{d, f.name, f.shown});
             }
             zipItems(st, "Favoritos.zip", items, out);
+            return;
+        }
+        if (path.equals("/api/geo")) {
+            List<String> stores = new ArrayList<String>();
+            for (String n : names) {
+                Favorites.Fav f = byName.get(n);
+                if (f != null && f.store.startsWith(user + "/")) stores.add(f.store);
+            }
+            if (stores.isEmpty()) {
+                error(out, names.isEmpty() ? 400 : 403, names.isEmpty() ? "No has elegido ninguna foto"
+                        : "Esa foto es de otro: solo su dueño puede cambiar dónde se hizo.");
+                return;
+            }
+            if (method.equals("GET")) json(out, 200, geoInfo(user, stores.get(0)));
+            else geoSet(stores, params, out);
             return;
         }
         if (path.equals("/api/echo") || path.equals("/api/fav") || path.equals("/api/delete")) {

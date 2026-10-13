@@ -145,6 +145,8 @@
   #aTheme button.on { background: var(--orange); color: var(--black); }
   #aGSlot:not(:empty) { margin-top: 12px; }
   #secMapa iframe { display: block; width: 100%; height: calc(100vh - 70px); border: 0; }
+  .modal .box.geo { width: min(960px, 100%); height: min(720px, calc(100vh - 32px)); }
+  #geoFrame { flex: 1; width: 100%; border: 0; display: block; }
 
   /* ventanas */
   .modal { display: none; position: fixed; inset: 0; z-index: 35; background: rgba(17,17,17,.6); align-items: center; justify-content: center; padding: 16px; }
@@ -247,6 +249,7 @@
     <button id="dlSel" class="main">⬇ Descargar</button>
     <button id="favSel">⭐ Favorito</button>
     <button id="echoSel" class="alt">📺 Al Echo</button>
+    <button id="geoSel" title="Dónde se hizo">📍 Ubicación</button>
     <button id="ren">✎ Renombrar</button>
     <button id="mv">↦ Mover</button>
     <button id="del" class="danger">🗑 Borrar</button>
@@ -399,6 +402,7 @@
     <button id="vfav" title="Favorito">☆</button>
     <button id="vdl" class="main">⬇</button>
     <button id="vecho" class="alt">📺 Al Echo</button>
+    <button id="vgeo" title="Dónde se hizo">📍</button>
     <button id="vren">✎</button>
     <button id="vmv">↦ Mover</button>
     <button id="vdel" class="danger">🗑</button>
@@ -452,6 +456,8 @@
   </div>
   <div class="row"><button id="albumLinkOk" class="main">Usar este enlace</button><button id="albumNo">Cancelar</button></div>
 </div></div>
+
+<div id="geoBox" class="modal"><div class="box geo"><iframe id="geoFrame" title="¿Dónde se hizo?"></iframe></div></div>
 
 <form id="zipForm" method="POST" action="/api/zip" style="display:none"></form>
 <script>
@@ -596,6 +602,7 @@ function route() {
   } else if (s === 'mapa') {
     const src = '/mapa.html?embed=1&tema=' + (document.documentElement.getAttribute('data-theme') === 'dark' ? 'oscuro' : 'claro');
     if ($('mapFrame').getAttribute('src') !== src) $('mapFrame').setAttribute('src', src);
+    else mapReload();
   } else if (s === 'echo') echoLoad();
   else if (s === 'google') { $('gSetup').appendChild($('gSetupForm')); gLoad(); }
   else if (s === 'ajustes') aLoad();
@@ -733,6 +740,7 @@ function updateSel() {
   $('selN').textContent = plural(n, 'elegida', 'elegidas');
   $('dlSel').hidden = selected.size === 0;
   $('echoSel').hidden = ![...selected].some(isImg);
+  $('geoSel').hidden = !canGeo([...selected]);
   $('ren').hidden = !own || n !== 1;
   $('mv').hidden = $('del').hidden = !own;
   const names = [...selected], allFav = names.length > 0 && names.every(n => (allFiles.find(f => f.name === n) || {}).fav);
@@ -911,6 +919,62 @@ async function sendEcho(names) {
 }
 $('echoSel').onclick = async () => { if (await sendEcho([...selected])) { selected.clear(); selDirs.clear(); render(); } };
 
+// ---------- 📍 dónde se hizo (se guarda en el box; el archivo no se toca) ----------
+// solo en lo tuyo (o en tus favoritos que son tuyos), y solo fotos y vídeos
+function canGeo(names) {
+  if (access !== 'own' && access !== 'fav') return false;
+  return names.length > 0 && names.some(n => {
+    const f = allFiles.find(x => x.name === n);
+    return f && (isImg(n) || isVid(n)) && (access === 'own' || f.own);
+  });
+}
+let geoJob = null;
+async function geoPick(dir, names, after) {
+  let info = {};
+  try { info = await api('/api/geo?path=' + enc(dir) + '&name=' + enc(names[0])); } catch (e) { if (e instanceof Expired) return; }
+  geoJob = {dir, names, after};
+  const q = new URLSearchParams({embed: '1', pick: '1', n: String(names.length),
+    tema: document.documentElement.getAttribute('data-theme') === 'dark' ? 'oscuro' : 'claro'});
+  if (info.lat != null) { q.set('lat', info.lat); q.set('lon', info.lon); }
+  if (info.manual) q.set('manual', '1');
+  $('geoFrame').src = '/mapa.html?' + q;
+  modal('geoBox', true);
+}
+function geoClose() {
+  if (document.activeElement === $('geoFrame')) $('geoFrame').blur(); // que Esc vuelva a llegar a esta página
+  modal('geoBox', false); $('geoFrame').src = 'about:blank'; geoJob = null;
+}
+function mapReload() {
+  const w = $('mapFrame').contentWindow;
+  if (w && $('mapFrame').getAttribute('src')) w.postMessage({subelo: 'recargar'}, location.origin);
+}
+addEventListener('message', async e => {
+  if (e.origin !== location.origin || !e.data || typeof e.data.subelo !== 'string') return;
+  const d = e.data;
+  if (d.subelo === 'ubicar' && e.source === $('mapFrame').contentWindow) { // desde el visor del mapa
+    geoPick(String(d.dir || ''), [String(d.name || '')], mapReload);
+    return;
+  }
+  if (e.source !== $('geoFrame').contentWindow || !geoJob) return;
+  const job = geoJob;
+  if (d.subelo === 'cancelar') { geoClose(); return; }
+  if (d.subelo !== 'sitio' && d.subelo !== 'quitar') return;
+  const fields = [['path', job.dir], ...job.names.map(n => ['name', n])];
+  if (d.subelo === 'sitio') fields.push(['lat', String(d.lat)], ['lon', String(d.lon)]); else fields.push(['clear', '1']);
+  let r;
+  try { r = await post('/api/geo', fields); } catch (err) { fail(err); geoClose(); return; }
+  geoClose();
+  toast(d.subelo === 'sitio'
+    ? '📍 ' + plural(r.changed || 0, 'foto ya sale', 'fotos ya salen') + ' en ese sitio del Mapa. El archivo no se ha tocado.'
+    : '↺ Quitada la ubicación puesta a mano' + ((r.changed || 0) > 1 ? ' de ' + r.changed + ' fotos' : '') + ': vuelve la del GPS de la foto, si tenía.');
+  if (job.after) job.after();
+});
+$('geoSel').onclick = () => {
+  const names = [...selected].filter(n => isImg(n) || isVid(n));
+  geoPick(path, names, () => { selected.clear(); selDirs.clear(); render(); });
+};
+$('vgeo').onclick = () => { if (vi >= 0) geoPick(path, [files[vi].name]); };
+
 // ---------- visor ----------
 let vi = -1;
 function openViewer(i) {
@@ -922,6 +986,7 @@ function openViewer(i) {
   $('vinfo').textContent = (access === 'fav' && f.from ? 'En ' + f.from + ' · ' : '') + fmt(f.size) + (f.mtime ? ' · ' + new Date(f.mtime).toLocaleString() : '');
   favBtn(f);
   $('vecho').hidden = !isImg(f.name);
+  $('vgeo').hidden = !canGeo([f.name]);
   $('vren').hidden = $('vmv').hidden = $('vdel').hidden = !own;
   const b = $('vbody'); b.innerHTML = '';
   const el = document.createElement(isVid(f.name) ? 'video' : 'img');
@@ -991,7 +1056,10 @@ $('viewer').addEventListener('touchend', e => {
   if (Math.abs(dx) > 60) step(dx < 0 ? 1 : -1);
 });
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') { ['pick', 'shareBox', 'albumBox'].forEach(m => modal(m, false)); if (vi >= 0) closeViewer(); else if (selecting()) clearSel(); }
+  if (e.key === 'Escape') {
+    if (geoJob) { geoClose(); return; }
+    ['pick', 'shareBox', 'albumBox'].forEach(m => modal(m, false)); if (vi >= 0) closeViewer(); else if (selecting()) clearSel();
+  }
   if (vi < 0) return;
   if (e.key === 'ArrowLeft') step(-1);
   if (e.key === 'ArrowRight') step(1);

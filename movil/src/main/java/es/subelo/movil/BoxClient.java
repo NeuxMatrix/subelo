@@ -55,6 +55,8 @@ final class BoxClient {
         boolean fav;
         /** En la carpeta de favoritos: de qué carpeta es («» = la principal, «Julss: Viajes» = de otro). */
         String from;
+        /** En la carpeta de favoritos: si es tuyo (lo de otro no se puede cambiar). */
+        boolean own = true;
 
         RemoteFile(String dir, String name, long size, long mtime) {
             this.dir = dir;
@@ -303,6 +305,7 @@ final class BoxClient {
                 JSONObject x = f.optJSONObject(i);
                 RemoteFile rf = new RemoteFile(path, x.optString("name"), x.optLong("size", -1), x.optLong("mtime", 0));
                 rf.fav = x.optBoolean("fav");
+                rf.own = x.optBoolean("own", true);
                 if (x.has("from")) rf.from = x.optString("from");
                 l.files.add(rf);
             }
@@ -358,6 +361,30 @@ final class BoxClient {
         f.add(new String[]{"on", on ? "1" : "0"});
         for (String n : names) f.add(new String[]{"name", n});
         form("/api/fav", f);
+    }
+
+    /** Dónde se hizo: {lat, lon, manual} (sin lat si no se sabe). */
+    JSONObject geoOf(String path, String name) throws IOException {
+        return call("GET", "/api/geo?path=" + enc(path) + "&name=" + enc(name), 15000);
+    }
+
+    /** Pone a mano dónde se hicieron (el archivo no se toca: lo guarda el box para el mapa). */
+    void geo(String path, List<String> names, double lat, double lon) throws IOException {
+        List<String[]> f = new ArrayList<String[]>();
+        f.add(new String[]{"path", path});
+        f.add(new String[]{"lat", String.valueOf(lat)});
+        f.add(new String[]{"lon", String.valueOf(lon)});
+        for (String n : names) f.add(new String[]{"name", n});
+        form("/api/geo", f);
+    }
+
+    /** Quita la ubicación puesta a mano (vuelve la del GPS de la foto, si tenía). */
+    void geoClear(String path, List<String> names) throws IOException {
+        List<String[]> f = new ArrayList<String[]>();
+        f.add(new String[]{"path", path});
+        f.add(new String[]{"clear", "1"});
+        for (String n : names) f.add(new String[]{"name", n});
+        form("/api/geo", f);
     }
 
     void rename(String path, String name, String newName) throws IOException {

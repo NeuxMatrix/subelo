@@ -81,6 +81,7 @@ final class Places {
                 t.start();
             }
         }
+        Map<String, double[]> manual = Geo.of(ctx, user); // las puestas a mano mandan sobre el GPS
         StringBuilder sb = new StringBuilder(64 * 1024);
         int total;
         synchronized (s) {
@@ -88,22 +89,41 @@ final class Places {
             sb.append("{\"places\":[");
             boolean first = true;
             for (Rec r : s.recs.values()) {
-                if (Double.isNaN(r.lat)) continue;
+                double[] m = manual.get(user + (r.dir.isEmpty() ? "" : "/" + r.dir) + "/" + r.name);
+                double lat = m != null ? m[0] : r.lat, lon = m != null ? m[1] : r.lon;
+                if (Double.isNaN(lat)) continue;
                 if (!first) sb.append(',');
                 first = false;
                 sb.append('[');
                 str(sb, r.dir);
                 sb.append(',');
                 str(sb, r.name);
-                sb.append(',').append(String.format(Locale.US, "%.6f,%.6f", r.lat, r.lon)).append(',');
+                sb.append(',').append(String.format(Locale.US, "%.6f,%.6f", lat, lon)).append(',');
                 str(sb, r.date);
-                sb.append(',').append(r.size).append(']');
+                sb.append(',').append(r.size).append(',').append(m != null ? 1 : 0).append(']');
             }
         }
         sb.append("],\"media\":").append(total)
                 .append(",\"scanning\":").append(s.scanning)
                 .append(",\"seen\":").append(s.seen).append('}');
         return sb.toString();
+    }
+
+    /** Ubicación del GPS de una foto si ya se ha leído (sin esperar a repasar el disco), o null. */
+    static double[] known(Context ctx, String user, String rel, String name) {
+        State s;
+        synchronized (STATES) {
+            s = STATES.get(user);
+            if (s == null) {
+                s = new State();
+                s.recs = load(file(ctx, user));
+                STATES.put(user, s);
+            }
+        }
+        synchronized (s) {
+            Rec r = s.recs.get(rel + "/" + name);
+            return r == null || Double.isNaN(r.lat) ? null : new double[]{r.lat, r.lon};
+        }
     }
 
     private static void scan(Context ctx, Store st, String user, State s) {

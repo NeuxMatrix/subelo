@@ -51,6 +51,7 @@ public class ExploreActivity extends Activity {
     private static final int REQ_PICK = 1;
     private static final int REQ_WRITE = 2;
     private static final int REQ_MOVE = 3;
+    private static final int REQ_GEO = 4;
 
     static final int FAV_YELLOW = 0xFFFFD23F;
 
@@ -66,7 +67,9 @@ public class ExploreActivity extends Activity {
     private String path = "";
     private BoxClient bc;
     private TextView pathText;
-    private Button downloadButton, uploadButton, folderButton, moveButton, deleteButton, renameButton, shareButton, echoButton, favButton;
+    private Button downloadButton, uploadButton, folderButton, moveButton, deleteButton, renameButton, shareButton, echoButton, favButton, geoButton;
+    /** Las fotos a las que se está eligiendo sitio (📍), mientras está abierto el mapa. */
+    private ArrayList<String> geoNames;
     private LinearLayout echoRow;
     private BoxClient.Listing current = new BoxClient.Listing();
     private Adapter adapter;
@@ -85,7 +88,10 @@ public class ExploreActivity extends Activity {
                 }
             };
         }
-        if (savedInstanceState != null) path = savedInstanceState.getString("path", "");
+        if (savedInstanceState != null) {
+            path = savedInstanceState.getString("path", "");
+            geoNames = savedInstanceState.getStringArrayList("geoNames");
+        }
         else if (getIntent().getStringExtra("path") != null) path = getIntent().getStringExtra("path"); // abrir en esa carpeta
 
         LinearLayout col = new LinearLayout(this);
@@ -145,6 +151,13 @@ public class ExploreActivity extends Activity {
             }
         });
         echoRow.addView(favButton, Brutal.half(this));
+        geoButton = Brutal.button(this, "📍", Brutal.PAPER, Brutal.BLACK, new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                geoSelected();
+            }
+        });
+        echoRow.addView(geoButton, Brutal.spaced(this, dp(56), LinearLayout.LayoutParams.WRAP_CONTENT, 0));
         col.addView(echoRow);
 
         LinearLayout bar = new LinearLayout(this);
@@ -209,6 +222,7 @@ public class ExploreActivity extends Activity {
     protected void onSaveInstanceState(Bundle out) {
         super.onSaveInstanceState(out);
         out.putString("path", path);
+        if (geoNames != null) out.putStringArrayList("geoNames", geoNames);
     }
 
     @Override
@@ -332,6 +346,7 @@ public class ExploreActivity extends Activity {
             for (BoxClient.RemoteFile f : selectedFiles()) if (!f.fav) allFav = false;
             favButton.setText(current.fav() || allFav ? "☆ QUITAR DE FAVORITOS" : "⭐ FAVORITO");
             favButton.setVisibility(nFiles > 0 ? View.VISIBLE : View.GONE);
+            geoButton.setVisibility(geoSelection().isEmpty() ? View.GONE : View.VISIBLE);
             echoRow.setVisibility(nFiles > 0 ? View.VISIBLE : View.GONE);
         } else {
             pathText.setText(where + "\n" + files.size() + " ARCHIVOS"
@@ -406,6 +421,22 @@ public class ExploreActivity extends Activity {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode == REQ_MOVE && resultCode == RESULT_OK && data != null) {
             moveSelected(data.getStringExtra("path"));
+            return;
+        }
+        if (requestCode == REQ_GEO) {
+            final List<String> names = geoNames;
+            geoNames = null;
+            if (resultCode != RESULT_OK || data == null || names == null || names.isEmpty()) return;
+            final boolean clear = data.getBooleanExtra("clear", false);
+            final double lat = data.getDoubleExtra("lat", Double.NaN), lon = data.getDoubleExtra("lon", Double.NaN);
+            String what = names.size() == 1 ? "1 foto" : names.size() + " fotos";
+            run(clear ? "Quitada la ubicación puesta a mano (" + what + ")" : "📍 " + what + " en ese sitio del mapa (el archivo no se toca)", new Op() {
+                @Override
+                public void go(BoxClient c) throws IOException {
+                    if (clear) c.geoClear(path, names);
+                    else c.geo(path, names, lat, lon);
+                }
+            });
             return;
         }
         if (requestCode != REQ_PICK || resultCode != RESULT_OK || data == null) return;
@@ -519,6 +550,44 @@ public class ExploreActivity extends Activity {
                 })
                 .setNegativeButton("Cancelar", null)
                 .show();
+    }
+
+    /** Fotos y vídeos elegidos a los que se puede poner sitio: los tuyos (en Favoritos, solo los tuyos). */
+    private ArrayList<String> geoSelection() {
+        ArrayList<String> l = new ArrayList<String>();
+        if (!current.own() && !current.fav()) return l;
+        for (BoxClient.RemoteFile f : selectedFiles()) {
+            if ((Downloader.isImage(f.name) || Downloader.isVideo(f.name)) && (current.own() || f.own)) l.add(f.name);
+        }
+        return l;
+    }
+
+    /** 📍: pregunta al box dónde está la primera (para empezar ahí) y abre el mapa para elegir el sitio. */
+    private void geoSelected() {
+        final ArrayList<String> names = geoSelection();
+        if (names.isEmpty()) return;
+        final String p = path;
+        bg.execute(new Runnable() {
+            @Override
+            public void run() {
+                org.json.JSONObject info = null;
+                try {
+                    if (bc == null) bc = BoxClient.connect(ExploreActivity.this);
+                    info = bc.geoOf(p, names.get(0));
+                } catch (IOException ignored) {
+                    // sin saber dónde estaba: el mapa empieza en el último sitio que pusiste
+                }
+                final org.json.JSONObject in = info;
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (!p.equals(path)) return;
+                        geoNames = names;
+                        startActivityForResult(MapActivity.pick(ExploreActivity.this, in, names.size()), REQ_GEO);
+                    }
+                });
+            }
+        });
     }
 
     /** Marca lo elegido como favorito, o lo quita si ya lo era todo (o si estamos en Favoritos). */

@@ -6,11 +6,13 @@
 <title>Súbelo · Mapa de fotos</title>
 <script>
   // Mismo archivo en el box (navegador) y en la app del móvil (que pasa ?app=1&tema=oscuro|claro);
-  // la web del box lo mete en su pestaña «Mapa» con ?embed=1&tema=….
+  // la web del box lo mete en su pestaña «Mapa» con ?embed=1&tema=…. Con &pick=1 no enseña las
+  // fotos: sirve para elegir dónde se hizo una (📍 Ubicación) y se lo devuelve a quien lo abrió.
   (function () {
     var q = new URLSearchParams(location.search), t = null;
     window.EN_APP = q.get('app') === '1';
     window.EMBED = q.get('embed') === '1'; // dentro de la web del box (pestaña «Mapa»)
+    window.PICK = q.get('pick') === '1';
     if (EN_APP || EMBED) t = q.get('tema') === 'oscuro' ? 'dark' : 'light';
     else { try { t = localStorage.getItem('subelo-tema'); } catch (e) {} }
     if (!t) t = window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
@@ -53,11 +55,23 @@
   #msg p { margin: 0; line-height: 1.4; }
   #wrap { position: relative; flex: 1; display: flex; min-height: 0; }
   #viewer { display: none; position: fixed; inset: 0; background: #111; z-index: 1000; flex-direction: column; }
-  #viewer .bar { display: flex; gap: 10px; align-items: center; padding: 10px 14px; border-bottom: 3px solid var(--paper); color: var(--paper); }
-  #viewer .bar span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .8rem; }
-  #viewer .stage { flex: 1; display: flex; align-items: center; justify-content: center; min-height: 0; position: relative; }
-  #viewer img, #viewer video { max-width: calc(100vw - 30px); max-height: calc(100% - 30px); border: 4px solid var(--paper); box-shadow: 10px 10px 0 var(--purple); }
-  #viewer .nav { position: absolute; top: 50%; transform: translateY(-50%); font-size: 1.5rem; padding: 8px 14px; }
+  #viewer .bar { display: flex; gap: 8px; align-items: center; padding: 10px 14px; border-bottom: 3px solid var(--paper); color: var(--paper); background: #111; position: relative; z-index: 2; flex-wrap: wrap; }
+  #viewer .bar span { flex: 1; min-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .8rem; }
+  #viewer .stage { flex: 1; min-height: 0; position: relative; overflow: hidden; }
+  #vbody { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 16px 18px 22px 16px; }
+  #viewer img, #viewer video { max-width: 100%; max-height: 100%; object-fit: contain; border: 4px solid var(--paper); box-shadow: 10px 10px 0 var(--purple); }
+  #viewer .nav { position: absolute; top: 50%; transform: translateY(-50%); font-size: 1.5rem; padding: 8px 14px; z-index: 2; }
+  /* elegir dónde se hizo */
+  #pickTop { display: none; gap: 8px; padding: 9px 12px; background: var(--cream); border-bottom: 3px solid var(--ink); flex-wrap: wrap; align-items: center; }
+  #pickTop input { flex: 1; min-width: 160px; font: 500 1rem "Space Grotesk", system-ui, sans-serif; padding: 8px 10px; border: 3px solid var(--ink); background: var(--surface); color: var(--ink); border-radius: 0; }
+  #pickTop button, #pickBar button { border-color: var(--ink); box-shadow: 3px 3px 0 var(--ink); background: var(--surface); color: var(--ink); }
+  #found { display: none; position: absolute; left: 12px; right: 12px; top: 8px; z-index: 600; background: var(--surface); border: 3px solid var(--ink); box-shadow: 6px 6px 0 var(--purple); max-height: 50%; overflow: auto; }
+  #found div { padding: 10px 12px; border-bottom: 2px solid var(--ink); cursor: pointer; }
+  #found div:hover { background: var(--lilac); }
+  #pickBar { display: none; gap: 10px; padding: 10px 12px; background: var(--black); border-top: 3px solid var(--ink); flex-wrap: wrap; align-items: center; }
+  #pickBar .hint { color: var(--paper); flex: 1; min-width: 150px; font-size: .72rem; }
+  #pickBar button:disabled { opacity: .45; cursor: default; }
+  .pin { font-size: 40px; line-height: 40px; text-align: center; filter: drop-shadow(2px 3px 0 #111); }
   #prev { left: 10px; } #next { right: 10px; }
   .main { background: var(--orange) !important; border-color: var(--orange) !important; }
 </style>
@@ -70,12 +84,15 @@
   <button id="theme" class="mono"></button>
 </div>
 <div id="years" class="mono"></div>
+<form id="pickTop"><input id="pq" type="search" placeholder="Busca un sitio (Toledo, Plaza Mayor Madrid…) o pega coordenadas" autocomplete="off"><button class="mono">Buscar</button></form>
 <div id="wrap">
   <div id="map"></div>
+  <div id="found"></div>
   <div id="msg"><h2 id="msgT"></h2><p id="msgP"></p></div>
 </div>
+<div id="pickBar"><span class="hint mono" id="pickHint">Toca en el mapa donde se hizo</span><button id="pickClear" class="mono" hidden>↺ Quitar la puesta a mano</button><button id="pickNo" class="mono">Cancelar</button><button id="pickOk" class="mono main" disabled>✓ Guardar aquí</button></div>
 <div id="viewer">
-  <div class="bar mono"><span id="vname"></span><a class="btn main" id="vdl" download>⬇</a><button id="vclose">✕</button></div>
+  <div class="bar mono"><span id="vname"></span><a class="btn" id="vdir">📁 Carpeta</a><button id="vgeo" hidden>📍 Cambiar sitio</button><a class="btn main" id="vdl" download>⬇</a><button id="vclose">✕ Cerrar</button></div>
   <div class="stage"><div id="vbody"></div><button class="nav" id="prev">‹</button><button class="nav" id="next">›</button></div>
 </div>
 <script src="/static/leaflet.js"></script>
@@ -86,9 +103,17 @@ const enc = encodeURIComponent;
 const VIDEO = /\.(mp4|mov|3gp|mkv|webm|m4v|avi)$/i;
 const dark = () => document.documentElement.getAttribute('data-theme') === 'dark';
 const fmt = n => n.toLocaleString('es-ES');
-let all = [], year = '', fitted = false, layer = null, lastKey = '', vlist = [], vi = -1;
+let all = [], year = '', fitted = false, layer = null, lastKey = '', vlist = [], vi = -1, pollT = 0;
 
 if (EN_APP || EMBED) { $('back').hidden = true; $('theme').hidden = true; }
+// quien abrió esta página: la web del box (otro marco de la misma dirección) o la app del móvil
+function tell(msg) {
+  if (EN_APP && window.SubeloApp) {
+    if (msg.subelo === 'sitio') SubeloApp.sitio(msg.lat, msg.lon);
+    else if (msg.subelo === 'quitar') SubeloApp.quitar();
+    else if (msg.subelo === 'cancelar') SubeloApp.cancelar();
+  } else if (EMBED && parent !== window) parent.postMessage(msg, location.origin);
+}
 
 const map = L.map('map', {zoomControl: true, worldCopyJump: true}).setView([40.2, -3.7], 5);
 let tiles = null;
@@ -171,10 +196,11 @@ async function load() {
   } catch (e) {
     $('stat').textContent = 'Sin conexión';
     message('No se pudo cargar', e.message || String(e));
-    setTimeout(load, 8000);
+    clearTimeout(pollT);
+    pollT = setTimeout(load, 8000);
     return;
   }
-  all = j.places.map(a => ({d: a[0], n: a[1], la: a[2], lo: a[3], t: a[4], s: a[5]}));
+  all = j.places.map(a => ({d: a[0], n: a[1], la: a[2], lo: a[3], t: a[4], s: a[5], m: a[6] === 1}));
   years();
   build();
   $('stat').textContent = j.scanning
@@ -184,8 +210,14 @@ async function load() {
   else if (j.scanning) message('Buscando…', 'Estoy leyendo dónde se hizo cada foto. La primera vez tarda un poco; el mapa se va llenando solo.');
   else if (!j.media) message('Aún no hay fotos', 'Cuando subas fotos al box aparecerán aquí, en el sitio donde se hicieron.');
   else message('Ninguna foto tiene ubicación', 'Las fotos solo guardan dónde se hicieron si la cámara del móvil tiene activada la ubicación (en la app Cámara, ajustes › «Guardar ubicación»).');
-  if (j.scanning) setTimeout(load, 2500);
+  clearTimeout(pollT);
+  if (j.scanning) pollT = setTimeout(load, 2500);
 }
+// la web avisa cuando ha cambiado algo (una ubicación puesta a mano): se vuelve a pintar
+addEventListener('message', e => {
+  if (e.origin !== location.origin || !e.data || e.data.subelo !== 'recargar' || PICK) return;
+  lastKey = ''; closeViewer(); load();
+});
 
 // ---------- ver una foto ----------
 function openAt(p) {
@@ -205,8 +237,11 @@ function show(i) {
   if (i < 0 || i >= vlist.length) return;
   vi = i;
   const p = vlist[i], url = '/api/file?path=' + enc(p.d) + '&name=' + enc(p.n);
-  $('vname').textContent = (i + 1) + '/' + vlist.length + ' · ' + (p.t || '') + ' · ' + (p.d ? p.d + '/' : '') + p.n;
+  $('vname').textContent = (i + 1) + '/' + vlist.length + ' · ' + (p.t || '') + ' · ' + (p.d ? p.d + '/' : '') + p.n
+    + (p.m ? ' · 📍 puesta a mano' : '');
   $('vdl').href = url + '&download=1';
+  $('vdir').href = '/#fotos/' + enc(p.d);
+  $('vgeo').hidden = !EMBED;
   $('vbody').innerHTML = '';
   const el = document.createElement(VIDEO.test(p.n) ? 'video' : 'img');
   if (el.tagName === 'VIDEO') { el.controls = true; el.autoplay = true; }
@@ -218,6 +253,13 @@ function show(i) {
 }
 function closeViewer() { $('vbody').innerHTML = ''; $('viewer').style.display = 'none'; vi = -1; }
 $('vclose').onclick = closeViewer;
+$('vbody').onclick = e => { if (e.target === $('vbody')) closeViewer(); }; // clic fuera de la foto
+$('vdir').onclick = e => {
+  if (!EMBED || vi < 0) return;
+  e.preventDefault();
+  top.location.hash = '#fotos/' + enc(vlist[vi].d); // en la web: abre su carpeta en «Mis fotos»
+};
+$('vgeo').onclick = () => { if (vi >= 0) tell({subelo: 'ubicar', dir: vlist[vi].d, name: vlist[vi].n}); };
 $('prev').onclick = () => show(vi - 1);
 $('next').onclick = () => show(vi + 1);
 document.addEventListener('keydown', e => {
@@ -236,7 +278,87 @@ $('theme').onclick = () => {
   setTiles();
 };
 themeLabel();
-load();
+
+// ---------- elegir dónde se hizo (pick=1) ----------
+function pickMode() {
+  const q = new URLSearchParams(location.search), LAST = 'subelo-ultimo-sitio';
+  const n = parseInt(q.get('n') || '1', 10) || 1;
+  $('years').style.display = 'none';
+  document.querySelector('h1').textContent = '¿Dónde se hizo?';
+  $('stat').textContent = n === 1 ? '1 foto' : n + ' fotos';
+  $('pickTop').style.display = 'flex';
+  $('pickBar').style.display = 'flex';
+  $('pickClear').hidden = q.get('manual') !== '1';
+  let pin = null;
+  function put(lat, lon, zoom) {
+    lon = ((lon + 540) % 360) - 180; // el mapa da la vuelta al mundo: lo dejamos entre -180 y 180
+    if (!pin) {
+      pin = L.marker([lat, lon], {draggable: true, icon: L.divIcon({className: '', html: '<div class="pin">📍</div>', iconSize: [40, 40], iconAnchor: [20, 38]})}).addTo(map);
+      pin.on('dragend', () => hint());
+    } else pin.setLatLng([lat, lon]);
+    if (zoom) map.setView([lat, lon], zoom); else map.panTo([lat, lon]);
+    hint();
+  }
+  function hint() {
+    const ll = pin.getLatLng();
+    $('pickHint').textContent = ll.lat.toFixed(5) + ', ' + ll.lng.toFixed(5) + ' · arrastra el 📍 para afinar';
+    $('pickOk').disabled = false;
+  }
+  map.on('click', e => { $('found').style.display = 'none'; put(e.latlng.lat, e.latlng.lng); });
+  const lat = parseFloat(q.get('lat')), lon = parseFloat(q.get('lon'));
+  if (!isNaN(lat) && !isNaN(lon)) put(lat, lon, 15);
+  else {
+    let last = null;
+    try { last = JSON.parse(localStorage.getItem(LAST)); } catch (e) {}
+    if (last && last.length === 2) map.setView(last, 12); // donde pusiste la última
+  }
+  $('pickTop').onsubmit = async e => {
+    e.preventDefault();
+    const text = $('pq').value.trim(), box = $('found');
+    if (!text) return;
+    // coordenadas («40.4168, -3.7038») o un enlace de Google Maps («…@40.4168,-3.7038,15z»)
+    const c = text.match(/(-?\d{1,2}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)/);
+    if (c && Math.abs(+c[1]) <= 90 && Math.abs(+c[2]) <= 180) { box.style.display = 'none'; put(+c[1], +c[2], 16); return; }
+    box.style.display = 'block';
+    box.innerHTML = '<div>Buscando…</div>';
+    let list;
+    try {
+      const r = await fetch('https://nominatim.openstreetmap.org/search?format=jsonv2&limit=6&accept-language=es&q=' + enc(text));
+      if (!r.ok) throw new Error('Error ' + r.status);
+      list = await r.json();
+    } catch (err) {
+      box.innerHTML = '<div>No he podido buscar (¿hay internet?). Toca el sitio en el mapa.</div>';
+      return;
+    }
+    box.innerHTML = '';
+    if (!list.length) { box.innerHTML = '<div>No encuentro «' + text.replace(/[<>&]/g, '') + '». Prueba con otro nombre o toca el mapa.</div>'; return; }
+    for (const x of list) {
+      const d = document.createElement('div');
+      d.textContent = x.display_name;
+      d.onclick = () => {
+        box.style.display = 'none';
+        put(+x.lat, +x.lon, x.boundingbox ? null : 16);
+        if (x.boundingbox) {
+          const b = x.boundingbox.map(Number);
+          map.fitBounds([[b[0], b[2]], [b[1], b[3]]], {maxZoom: 17});
+        }
+      };
+      box.appendChild(d);
+    }
+  };
+  $('pickOk').onclick = () => {
+    if (!pin) return;
+    const ll = pin.getLatLng(), lat = +ll.lat.toFixed(6), lon = +(((ll.lng + 540) % 360) - 180).toFixed(6);
+    try { localStorage.setItem(LAST, JSON.stringify([lat, lon])); } catch (e) {}
+    $('pickOk').disabled = true;
+    tell({subelo: 'sitio', lat, lon});
+  };
+  $('pickClear').onclick = () => tell({subelo: 'quitar'});
+  $('pickNo').onclick = () => tell({subelo: 'cancelar'});
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') tell({subelo: 'cancelar'}); });
+  if (!EN_APP && !EMBED) { $('pickOk').hidden = $('pickNo').hidden = $('pickClear').hidden = true; } // suelta: solo para mirar
+}
+if (PICK) pickMode(); else load();
 </script>
 </body>
 </html>

@@ -42,7 +42,7 @@ public class ViewerActivity extends Activity {
     private BoxClient bc;
     private FrameLayout stage;
     private TextView title, message;
-    private Button echo, star;
+    private Button echo, star, place;
     /** Permisos de la carpeta de donde vienen las fotos («own», «ver», «subir», «fav»), o null si no se sabe (mapa). */
     private String access;
     private GestureDetector gestures;
@@ -175,7 +175,14 @@ public class ViewerActivity extends Activity {
                 if (!files.isEmpty()) Echo.send(ViewerActivity.this, Collections.singletonList(files.get(index)));
             }
         });
+        place = Brutal.button(this, "📍", Brutal.PAPER, Brutal.BLACK, new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                pickPlace();
+            }
+        });
         nav.addView(prev, Brutal.spaced(this, dp(72), -2, 0));
+        nav.addView(place, Brutal.spaced(this, dp(56), -2, 0));
         nav.addView(echo, Brutal.half(this));
         nav.addView(next, Brutal.spaced(this, dp(72), -2, 0));
         root.addView(nav, new FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM));
@@ -218,6 +225,38 @@ public class ViewerActivity extends Activity {
     }
 
     private static final int REQ_MOVE = 1;
+    private static final int REQ_GEO = 2;
+    /** La foto a la que se está eligiendo sitio (📍), mientras está abierto el mapa. */
+    private BoxClient.RemoteFile geoFile;
+
+    /** ¿Se puede cambiar dónde se hizo? Lo tuyo (desde el mapa también lo es), y en Favoritos lo tuyo. */
+    private boolean canPlace(BoxClient.RemoteFile f) {
+        boolean media = Downloader.isImage(f.name) || Downloader.isVideo(f.name);
+        return media && (access == null || "own".equals(access) || "fav".equals(access) && f.own);
+    }
+
+    private void pickPlace() {
+        if (files.isEmpty() || bc == null) return;
+        final BoxClient.RemoteFile f = files.get(index);
+        bg.execute(new Runnable() {
+            @Override
+            public void run() {
+                org.json.JSONObject info = null;
+                try {
+                    info = bc.geoOf(f.dir, f.name);
+                } catch (IOException ignored) {
+                }
+                final org.json.JSONObject in = info;
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        geoFile = f;
+                        startActivityForResult(MapActivity.pick(ViewerActivity.this, in, 1), REQ_GEO);
+                    }
+                });
+            }
+        });
+    }
 
     private void confirmDelete() {
         if (files.isEmpty()) return;
@@ -238,6 +277,34 @@ public class ViewerActivity extends Activity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQ_GEO) {
+            final BoxClient.RemoteFile f = geoFile;
+            geoFile = null;
+            if (resultCode != RESULT_OK || data == null || f == null) return;
+            final boolean clear = data.getBooleanExtra("clear", false);
+            final double lat = data.getDoubleExtra("lat", Double.NaN), lon = data.getDoubleExtra("lon", Double.NaN);
+            bg.execute(new Runnable() {
+                @Override
+                public void run() {
+                    String err = null;
+                    try {
+                        if (clear) bc.geoClear(f.dir, Collections.singletonList(f.name));
+                        else bc.geo(f.dir, Collections.singletonList(f.name), lat, lon);
+                    } catch (IOException e) {
+                        err = e.getMessage();
+                    }
+                    final String msg = err != null ? err : clear ? "Quitada la ubicación puesta a mano"
+                            : "📍 Guardado: ya sale en ese sitio del mapa";
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            Toast.makeText(ViewerActivity.this, msg, Toast.LENGTH_LONG).show();
+                        }
+                    });
+                }
+            });
+            return;
+        }
         if (requestCode != REQ_MOVE || resultCode != RESULT_OK || data == null || files.isEmpty()) return;
         final BoxClient.RemoteFile f = files.get(index);
         final String to = data.getStringExtra("path");
@@ -351,6 +418,7 @@ public class ViewerActivity extends Activity {
                 + (f.from == null ? "" : "  · " + (f.from.isEmpty() ? "carpeta principal" : f.from)));
         showStar(f);
         echo.setVisibility(Downloader.isImage(f.name) ? View.VISIBLE : View.INVISIBLE);
+        place.setVisibility(canPlace(f) ? View.VISIBLE : View.GONE);
         stage.removeAllViews();
         message.setText("");
         if (bc == null) {

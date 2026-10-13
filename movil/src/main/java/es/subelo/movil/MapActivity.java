@@ -3,6 +3,7 @@ package es.subelo.movil;
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.ActivityNotFoundException;
+import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
@@ -26,10 +27,19 @@ import java.util.List;
 /**
  * Mapa con dónde se hizo cada foto. Es la misma página que sirve el box (mapa.html), cargada desde
  * la app: las peticiones a «subelo.local» las contesta la app (con la conexión segura al box) y el
- * mapa de fondo viene de internet.
+ * mapa de fondo viene de internet. Con {@link #pick} sirve para elegir dónde se hizo una foto
+ * (📍 Ubicación) y devuelve «lat» y «lon» (o «clear» para quitar la puesta a mano).
  */
 public class MapActivity extends Activity {
     private static final String HOST = "subelo.local";
+
+    /** Para startActivityForResult: elegir el sitio de n fotos; info = lo que dice el box ({lat, lon, manual}). */
+    static Intent pick(Context c, JSONObject info, int n) {
+        Intent i = new Intent(c, MapActivity.class).putExtra("pick", true).putExtra("n", n);
+        if (info != null && info.has("lat")) i.putExtra("lat", info.optDouble("lat")).putExtra("lon", info.optDouble("lon"));
+        if (info != null) i.putExtra("manual", info.optBoolean("manual"));
+        return i;
+    }
 
     private BoxClient bc;
 
@@ -66,7 +76,15 @@ public class MapActivity extends Activity {
             }
         });
         setContentView(web);
-        web.loadUrl("https://" + HOST + "/mapa.html?app=1&tema=" + (Brutal.dark ? "oscuro" : "claro"));
+        String url = "https://" + HOST + "/mapa.html?app=1&tema=" + (Brutal.dark ? "oscuro" : "claro");
+        Intent in = getIntent();
+        if (in.getBooleanExtra("pick", false)) {
+            url += "&pick=1&n=" + in.getIntExtra("n", 1) + (in.getBooleanExtra("manual", false) ? "&manual=1" : "");
+            if (in.hasExtra("lat")) {
+                url += String.format(java.util.Locale.US, "&lat=%.6f&lon=%.6f", in.getDoubleExtra("lat", 0), in.getDoubleExtra("lon", 0));
+            }
+        }
+        web.loadUrl(url);
     }
 
     private WebResourceResponse serve(Uri u) {
@@ -127,6 +145,34 @@ public class MapActivity extends Activity {
 
     /** Lo que la página puede pedir a la app. */
     private final class Bridge {
+        /** Elegir sitio: el elegido. */
+        @JavascriptInterface
+        public void sitio(final double lat, final double lon) {
+            done(new Intent().putExtra("lat", lat).putExtra("lon", lon));
+        }
+
+        /** Elegir sitio: quitar la ubicación puesta a mano. */
+        @JavascriptInterface
+        public void quitar() {
+            done(new Intent().putExtra("clear", true));
+        }
+
+        @JavascriptInterface
+        public void cancelar() {
+            done(null);
+        }
+
+        private void done(final Intent result) {
+            if (!getIntent().getBooleanExtra("pick", false)) return;
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    if (result != null) setResult(RESULT_OK, result);
+                    finish();
+                }
+            });
+        }
+
         /** Abre el visor del móvil con las fotos [[carpeta, nombre, tamaño], …] empezando en la elegida. */
         @JavascriptInterface
         public void ver(String json, final int index) {
