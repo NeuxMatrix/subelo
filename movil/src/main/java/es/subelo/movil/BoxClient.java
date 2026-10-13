@@ -279,6 +279,11 @@ final class BoxClient {
         return call("GET", "/api/info", 4000);
     }
 
+    /** Lo que ocupa cada usuario en el disco: {users: [{name, bytes, photos, videos…}], free, total, counting}. */
+    JSONObject usage() throws IOException {
+        return call("GET", "/api/usage", 15000);
+    }
+
     List<String> folders(String path) throws IOException {
         JSONObject o = call("GET", "/api/folders?path=" + enc(path), 15000);
         List<String> out = new ArrayList<String>();

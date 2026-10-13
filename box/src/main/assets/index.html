@@ -22,6 +22,9 @@
   @font-face { font-family: "Space Mono"; src: url(/static/SpaceMono-Bold.ttf) format("truetype"); font-weight: 700; font-display: swap; }
   :root { --purple:#7B2FF7; --orange:#FF6B1A; --black:#111; --paper:#FFF4E6; --snow:#fff; --ink:#111; --cream:#FFF4E6; --surface:#fff; --lilac:#E4D6FF; --peach:#FFD9C2; --red:#E5322D; --green:#14A44D; --b:3px solid var(--ink); --sh:5px 5px 0 var(--ink); color-scheme: light; }
   html[data-theme=dark] { --ink:#F3EADF; --cream:#16121C; --surface:#241D2E; --lilac:#2E2148; --peach:#47291A; color-scheme: dark; }
+  /* espacio del disco: un color por usuario (el de su botón) y gris para lo demás; en oscuro, sus tonos para ese fondo */
+  :root { --u0:#FF6B1A; --u1:#7B2FF7; --uOther:#9A938C; }
+  html[data-theme=dark] { --u0:#F0600F; --u1:#9257FF; --uOther:#6E6676; }
   * { box-sizing: border-box; }
   body { font-family: "Space Grotesk", system-ui, sans-serif; font-weight: 500; background: var(--cream); color: var(--ink); margin: 0; }
   .mono { font-family: "Space Mono", ui-monospace, monospace; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; }
@@ -136,6 +139,17 @@
   .card .bar { margin-top: 16px; }
   .err { color: var(--red); font-weight: 700; margin-top: 10px; white-space: pre-line; }
   .note { font-size: .72rem; line-height: 1.6; }
+  #info.go { cursor: pointer; } #info.go:hover { opacity: 1; text-decoration: underline; }
+  .ubar { position: relative; display: flex; gap: 2px; height: 36px; padding: 2px; border: var(--b); background: var(--surface); margin: 2px 0 14px; }
+  .ubar i { display: block; height: 100%; min-width: 3px; outline: none; }
+  .ubar i:hover, .ubar i:focus-visible { filter: brightness(1.12); box-shadow: inset 0 0 0 2px var(--ink); }
+  .urows > div { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; column-gap: 10px; align-items: baseline; padding: 9px 0; border-bottom: 2px solid var(--ink); }
+  .urows > div:last-child { border-bottom: 0; }
+  .urows .sw { width: 14px; height: 14px; border: 2px solid var(--ink); align-self: center; }
+  .urows .sw.free { background: var(--surface); }
+  .urows b { font-weight: 700; } .urows .n { font-weight: 700; text-align: right; white-space: nowrap; }
+  .urows small { grid-column: 2 / 4; font: .72rem "Space Mono", monospace; opacity: .75; }
+  #uTip { position: fixed; z-index: 50; pointer-events: none; background: var(--black); color: var(--paper); font: .74rem "Space Mono", monospace; padding: 6px 9px; border: 2px solid var(--paper); white-space: nowrap; display: none; }
   ol.steps { padding-left: 20px; line-height: 1.5; margin: 6px 0 4px; }
   ol.steps li { margin-bottom: 6px; }
   label.check { display: flex; gap: 10px; align-items: flex-start; margin-top: 14px; font-size: .9rem; cursor: pointer; }
@@ -332,6 +346,13 @@
   <h2 class="ptitle">Ajustes</h2>
   <p class="lead">Lo demás se hace en la tele, en «Súbelo Servidor»: elegir el disco, borrar una contraseña olvidada e instalar las versiones nuevas del box.</p>
 
+  <div class="card" id="uCard">
+    <div class="tag">💾 // espacio del disco</div>
+    <div class="ubar" id="uBar" role="img" aria-label="Espacio del disco"></div>
+    <div class="urows" id="uRows">Mirando el box…</div>
+    <p class="note mono" id="uNote">Cuenta todo lo de la carpeta de cada uno: fotos, vídeos y lo demás. Lo que el otro añade en una carpeta que le compartes está en tu carpeta, así que cuenta como tuyo.</p>
+  </div>
+
   <div class="card">
     <div class="tag">🔑 // mi contraseña</div>
     <div>La que usas para entrar como <b id="aUser"></b>, aquí y en la app del móvil.</div>
@@ -398,6 +419,7 @@
 <div id="drop">Suelta para subir ⬆</div>
 <div id="queue"><button class="x" id="qx" title="Ocultar">✕</button><div class="t mono" id="qtitle"></div><div class="prog"><div id="qbar"></div></div><div id="qlog" class="mono"></div></div>
 <div id="toast"></div>
+<div id="uTip"></div>
 
 <div id="viewer">
   <div class="vtop">
@@ -479,7 +501,7 @@ const enc = encodeURIComponent;
 const isImg = n => /\.(jpe?g|png|gif|webp|bmp|heic|heif)$/i.test(n);
 const isVid = n => /\.(mp4|mov|m4v|3gp|webm|mkv|avi)$/i.test(n);
 const join = (a, b) => a ? a + '/' + b : b;
-const fmt = b => b >= 1e9 ? (b / 1e9).toFixed(1) + ' GB' : b >= 1e6 ? (b / 1e6).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1e3)) + ' KB';
+const fmt = b => b >= 1e12 ? (b / 1e12).toFixed(2) + ' TB' : b >= 1e9 ? (b / 1e9).toFixed(1) + ' GB' : b >= 1e6 ? (b / 1e6).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1e3)) + ' KB';
 const plural = (n, one, many) => n + ' ' + (n === 1 ? one : many);
 const VIRTUAL = '👥 Compartido conmigo';
 const FAV = '⭐ Favoritos'; // carpeta especial del box: apunta a las fotos, no las copia
@@ -575,6 +597,7 @@ async function logout(why) {
   $('grid').innerHTML = ''; closeViewer();
   showLogin(why);
 }
+$('info').onclick = () => { if (user && $('info').classList.contains('go')) location.hash = '#ajustes'; }; // lo que ocupa cada uno
 $('logout').onclick = () => { history.replaceState(null, '', '/'); logout(); }; // el siguiente empieza en su carpeta principal
 // sin usar la web un rato: fuera (el box también lo hace por su cuenta)
 let lastUse = Date.now();
@@ -593,7 +616,8 @@ async function start() {
     $('info').textContent = info.available
       ? (info.free >= 0 ? 'Libre ' + fmt(info.free) + ' de ' + fmt(info.total) : 'Disco listo')
       : 'El disco no está disponible en el box.';
-    $('info').title = info.storage || '';
+    $('info').title = (info.storage ? info.storage + '\n' : '') + 'Pulsa para ver lo que ocupa cada uno';
+    $('info').classList.add('go');
     route();
   } catch (e) { if (!(e instanceof Expired)) $('info').textContent = e.message; }
 }
@@ -1417,7 +1441,61 @@ $('gView').onclick = () => { const j = gJob(); if (j) go(j.dest); };
 // ---------- ajustes ----------
 function aLoad() {
   $('aUser').textContent = $('aPwUser').value = user;
-  aGoogle(); aEcho(); aShares(); aBox(); themeLabel();
+  aUsage(); aGoogle(); aEcho(); aShares(); aBox(); themeLabel();
+}
+// ---------- espacio del disco: lo que ocupa cada usuario (el box lo cuenta de fondo) ----------
+let uTimer = 0;
+const nf = n => Number(n).toLocaleString('es-ES');
+async function aUsage() {
+  clearTimeout(uTimer);
+  let o;
+  try { o = await api('/api/usage'); } catch (e) { if (!(e instanceof Expired)) $('uRows').textContent = '✖ ' + e.message; return; }
+  if (section !== 'ajustes') return;
+  if (o.counting) uTimer = setTimeout(() => { if (section === 'ajustes') aUsage(); }, 4000); // en cuanto acabe, se ve
+  const bar = $('uBar'), rows = $('uRows');
+  bar.innerHTML = ''; rows.innerHTML = '';
+  if (!o.users.length) {
+    bar.hidden = true;
+    rows.textContent = o.counting ? 'Contando lo que ocupa cada uno… En un disco grande tarda un poco.' : (o.total < 0 ? 'El disco no está disponible en el box.' : 'Todavía no se ha contado.');
+    return;
+  }
+  bar.hidden = o.total <= 0;
+  const pct = b => o.total > 0 ? (b / o.total * 100) : 0, pc = b => { const p = pct(b); return p > 0 && p < 1 ? '<1 %' : Math.round(p) + ' %'; };
+  const parts = o.users.map((u, i) => ({label: u.name + (u.name === user ? ' (tú)' : ''), color: 'var(--u' + i + ')', bytes: u.bytes,
+    detail: [[u.photos, u.photoBytes, 'foto', 'fotos'], [u.videos, u.videoBytes, 'vídeo', 'vídeos'],
+      [u.files - u.photos - u.videos, u.bytes - u.photoBytes - u.videoBytes, 'archivo más', 'archivos más']]
+      .map(([n, b, one, many], k) => n > 0 ? nf(n) + ' ' + (n === 1 ? one : many) + ' (' + fmt(b) + ')' : k < 2 ? '0 ' + many : '')
+      .filter(Boolean).join(' · ')}));
+  if (o.others > 0) parts.push({label: 'Otras cosas del disco', color: 'var(--uOther)', bytes: o.others, detail: 'Lo que hay en el disco fuera de las carpetas de Súbelo'});
+  if (o.free >= 0) parts.push({label: 'Libre', free: true, bytes: o.free, detail: 'De ' + fmt(o.total) + ' que tiene el disco'});
+  const tip = $('uTip');
+  for (const p of parts) {
+    // la barra: cada uno su trozo (lo libre es lo que queda vacío)
+    if (!p.free && o.total > 0 && p.bytes > 0) {
+      const seg = document.createElement('i');
+      seg.style.width = pct(p.bytes) + '%'; seg.style.background = p.color; seg.tabIndex = 0;
+      const text = p.label + ' · ' + fmt(p.bytes) + ' · ' + pc(p.bytes) + ' del disco';
+      seg.setAttribute('aria-label', text);
+      const showTip = (x, y) => { tip.textContent = text; tip.style.display = 'block';
+        tip.style.left = Math.min(x + 12, innerWidth - tip.offsetWidth - 8) + 'px'; tip.style.top = (y + 16) + 'px'; };
+      seg.onmousemove = e => showTip(e.clientX, e.clientY);
+      seg.onfocus = () => { const r = seg.getBoundingClientRect(); showTip(r.left, r.bottom - 8); };
+      seg.onmouseleave = seg.onblur = () => { tip.style.display = 'none'; };
+      bar.appendChild(seg);
+    }
+    // y la tabla, que también es la leyenda
+    const row = document.createElement('div');
+    row.innerHTML = '<span class="sw' + (p.free ? ' free' : '') + '"></span><b></b><span class="n"></span><small></small>';
+    if (!p.free) row.querySelector('.sw').style.background = p.color;
+    row.querySelector('b').textContent = p.label;
+    row.querySelector('.n').textContent = fmt(p.bytes) + (o.total > 0 ? ' · ' + pc(p.bytes) : '');
+    row.querySelector('small').textContent = p.detail;
+    rows.appendChild(row);
+  }
+  bar.setAttribute('aria-label', parts.map(p => p.label + ' ' + fmt(p.bytes)).join(', '));
+  const ago = o.at ? Math.round((Date.now() - o.at) / 60000) : -1;
+  $('uNote').textContent = 'Cuenta todo lo de la carpeta de cada uno: fotos, vídeos y lo demás. Lo que el otro añade en una carpeta que le compartes está en tu carpeta, así que cuenta como tuyo.'
+    + (o.counting ? ' Volviendo a contar…' : ago >= 0 ? ' Contado ' + (ago < 1 ? 'ahora mismo.' : 'hace ' + ago + ' min.') : '');
 }
 async function aGoogle() {
   let j;

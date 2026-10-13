@@ -230,8 +230,10 @@ public class MainActivity extends Activity {
                     storage = st.describe() + "\n⚠ NO DISPONIBLE. ¿Está conectado el disco?";
                 } else {
                     long free = st.free(), total = st.total();
+                    String used = Usage.lines(MainActivity.this, st); // lo que ocupa cada usuario
                     storage = st.describe()
-                            + (free >= 0 ? "\nLibre: " + gb(free) + " de " + gb(total) : "");
+                            + (free >= 0 ? "\nLibre: " + gb(free) + " de " + gb(total) : "")
+                            + (used.isEmpty() ? "" : "\n\n" + used);
                 }
                 runOnUiThread(new Runnable() {
                     @Override

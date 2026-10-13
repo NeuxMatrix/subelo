@@ -401,7 +401,7 @@ public class MainActivity extends Activity {
                     msg = "👤 " + Prefs.user(MainActivity.this) + "\n✔ Conectado a " + info.optString("name") + " (" + bc.host + ")  🔒 "
                             + BoxClient.shortCode(Prefs.certFp(MainActivity.this)) + "\n"
                             + (info.optBoolean("available")
-                            ? "Disco: " + info.optString("storage") + (free >= 0 ? " · libre " + gb(free) : "")
+                            ? "Disco: " + info.optString("storage") + (free >= 0 ? " · libre " + gb(free) : "") + usage(bc)
                             : "⚠ El box no tiene el disco disponible. Revisa el disco USB y la app del box.");
                 } catch (BoxClient.BoxException e) {
                     if (e.code == 401) {
@@ -429,6 +429,43 @@ public class MainActivity extends Activity {
                 });
             }
         });
+    }
+
+    /** Lo que ocupa cada usuario («\nFer: 120.3 GB · 12.345 fotos, 345 vídeos»…), o «» si el box no lo sabe decir. */
+    private String usage(BoxClient bc) {
+        try {
+            JSONObject u = bc.usage();
+            org.json.JSONArray users = u.optJSONArray("users");
+            if (users == null || users.length() == 0) {
+                if (!u.optBoolean("counting")) return "";
+                boxText.postDelayed(new Runnable() { // en cuanto acabe de contar, se ve
+                    @Override
+                    public void run() {
+                        if (!isFinishing()) refreshBox();
+                    }
+                }, 5000);
+                return "\nContando lo que ocupa cada uno…";
+            }
+            StringBuilder sb = new StringBuilder("\n");
+            for (int i = 0; i < users.length(); i++) {
+                JSONObject x = users.getJSONObject(i);
+                long photos = x.optLong("photos"), videos = x.optLong("videos");
+                sb.append("\n💾 ").append(x.optString("name")).append(": ").append(size(x.optLong("bytes")))
+                        .append(" · ").append(String.format(java.util.Locale.getDefault(), "%,d", photos)).append(photos == 1 ? " foto, " : " fotos, ")
+                        .append(String.format(java.util.Locale.getDefault(), "%,d", videos)).append(videos == 1 ? " vídeo" : " vídeos");
+            }
+            return sb.toString();
+        } catch (IOException e) {
+            return ""; // box antiguo: no lo sabe
+        } catch (org.json.JSONException e) {
+            return "";
+        }
+    }
+
+    private static String size(long bytes) {
+        if (bytes >= 1e12) return String.format(java.util.Locale.getDefault(), "%.2f TB", bytes / 1e12);
+        if (bytes >= 1e9) return String.format(java.util.Locale.getDefault(), "%.1f GB", bytes / 1e9);
+        return String.format(java.util.Locale.getDefault(), "%.0f MB", bytes / 1e6);
     }
 
     private void searchBox() {

@@ -60,6 +60,7 @@ import javax.net.ssl.SSLSocketFactory;
  * POST /api/password         password=&newPassword=[&phones=1]: cambia la tuya (cierra tus otras sesiones de la web;
  *                            con phones=1, también las del móvil)
  * GET  /api/box              modelo, versión, disco y si hay una versión nueva del box (para los ajustes de la web)
+ * GET  /api/usage            lo que ocupa cada usuario en el disco (se cuenta de fondo), libre y total
  * GET  /subelo-certificado.crt   la autoridad del box, para instalarla en el ordenador (sin sesión: es pública)
  * POST /api/fav              path=&name=…&on=1|0: marca o quita favoritos. Se ven en la carpeta especial
  *                            «⭐ Favoritos» (path=⭐ Favoritos), que solo apunta a los archivos: no los copia,
@@ -435,12 +436,17 @@ final class HttpServer {
             error(out, 401, "Tienes que entrar con tu usuario");
             return;
         }
+        if (!method.equals("GET") && !method.equals("HEAD")) Usage.changed(); // subir, borrar, mover…: volver a contar el espacio
         if (path.equals("/api/password")) {
             changePassword(ip, method, user, password, newPassword, webToken, "1".equals(params.get("phones")), out);
             return;
         }
         if (path.equals("/api/box")) {
             box(st, available, out);
+            return;
+        }
+        if (path.equals("/api/usage")) {
+            json(out, 200, Usage.json(ctx, st));
             return;
         }
         if (path.equals("/api/amazon") || path.startsWith("/api/amazon/")) {
