@@ -76,7 +76,8 @@ public class GoogleActivity extends Activity {
         col.addView(Brutal.title(this, "Traer de Google Fotos", 28, Brutal.INK));
         TextView intro = Brutal.text(this, 15, Brutal.INK);
         intro.setText("Eliges las fotos en Google Fotos (también las de un álbum: búscalo por su nombre) "
-                + "y el box las copia a la carpeta del disco que digas.");
+                + "y el box las copia a la carpeta del disco que digas. Si tienes varias cuentas de Google, "
+                + "cada vez te pregunta de cuál.");
         intro.setPadding(0, dp(6), 0, dp(4));
         col.addView(intro);
 
@@ -88,7 +89,7 @@ public class GoogleActivity extends Activity {
                 + "1. Entra en console.cloud.google.com con tu cuenta de Google y crea un proyecto («Subelo»).\n"
                 + "2. Busca «Google Photos Picker API» y pulsa Habilitar.\n"
                 + "3. En «Google Auth Platform» rellena la pantalla de consentimiento: nombre Súbelo, tu correo, tipo Externo. "
-                + "En «Público», añade como usuarios de prueba tu Gmail y el de Julss.\n"
+                + "En «Público», añade como usuarios de prueba todas las cuentas de Google de las que quieras traer fotos (las tuyas y la de Julss).\n"
                 + "4. En «Clientes», crea un cliente de tipo «Aplicación de escritorio».\n"
                 + "5. Copia el ID de cliente y el secreto (el secreto solo se ve al crearlo) y pégalos aquí.");
         setupCard.addView(steps);
@@ -256,7 +257,8 @@ public class GoogleActivity extends Activity {
         if (waitingAuth) {
             stateText.setText("Esperando a que des permiso en Google (en el navegador). Al aceptar se abre Google Fotos para elegir.");
         } else if (state.equals("picking")) {
-            stateText.setText("Elige las fotos en Google Fotos y pulsa «Hecho». Luego vuelve aquí.\n\nIrán a " + where);
+            stateText.setText("Elige las fotos en Google Fotos y pulsa «Hecho». Luego vuelve aquí.\n\nIrán a " + where
+                    + "\n\nSi Google Fotos enseña otra cuenta, cámbiala con tu foto de arriba a la derecha.");
             err = null;
         } else if (state.equals("downloading")) {
             int total = j.optInt("total"), done = j.optInt("done");

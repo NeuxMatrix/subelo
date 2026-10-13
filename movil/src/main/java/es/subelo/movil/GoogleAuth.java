@@ -63,6 +63,7 @@ final class GoogleAuth {
                 .appendQueryParameter("code_challenge", challenge(verifier))
                 .appendQueryParameter("code_challenge_method", "S256")
                 .appendQueryParameter("state", state)
+                .appendQueryParameter("prompt", "select_account") // con varias cuentas de Google, que pregunte cuál
                 .build().toString();
     }
 
