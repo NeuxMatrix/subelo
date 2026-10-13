@@ -202,6 +202,12 @@ public class MainActivity extends Activity {
                 openBox(AlbumsActivity.class);
             }
         }), Brutal.full(this));
+        main.addView(Brutal.button(this, "⬇ Traer de Google Fotos", Brutal.ORANGE, Brutal.BLACK, new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                openBox(GoogleActivity.class);
+            }
+        }), Brutal.full(this));
         main.addView(Brutal.button(this, "▦ Mis fotos por carpetas", Brutal.PAPER, Brutal.BLACK, new View.OnClickListener() {
             @Override
             public void onClick(View v) {

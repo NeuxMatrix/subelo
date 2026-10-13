@@ -447,6 +447,41 @@ final class BoxClient {
         return form("/api/echo", f);
     }
 
+    // ---------- traer de Google Fotos: el box descarga lo que se elige en el selector de Google ----------
+
+    JSONObject google() throws IOException {
+        return call("GET", "/api/google", 15000);
+    }
+
+    JSONObject googleSetup(String clientId, String secret) throws IOException {
+        List<String[]> f = new ArrayList<String[]>();
+        f.add(new String[]{"client", clientId});
+        f.add(new String[]{"secret", secret});
+        return form("/api/google/setup", f);
+    }
+
+    JSONObject googleReset() throws IOException {
+        return form("/api/google/reset", new ArrayList<String[]>());
+    }
+
+    /** Pasa al box el código que dio Google (con su verificador PKCE); devuelve el estado con «pickerUri». */
+    JSONObject googleStart(String code, String verifier, String redirect, String path) throws IOException {
+        List<String[]> f = new ArrayList<String[]>();
+        f.add(new String[]{"code", code});
+        f.add(new String[]{"verifier", verifier});
+        f.add(new String[]{"redirect", redirect});
+        f.add(new String[]{"path", path});
+        return form("/api/google/start", f);
+    }
+
+    JSONObject googleCancel() throws IOException {
+        return form("/api/google/cancel", new ArrayList<String[]>());
+    }
+
+    JSONObject googleClear() throws IOException {
+        return form("/api/google/clear", new ArrayList<String[]>());
+    }
+
     /** Miniatura JPEG o null si el box no puede generarla. */
     byte[] thumb(String dir, String name) throws IOException {
         HttpURLConnection c = open("GET", "/api/thumb?path=" + enc(dir) + "&name=" + enc(name), 30000);

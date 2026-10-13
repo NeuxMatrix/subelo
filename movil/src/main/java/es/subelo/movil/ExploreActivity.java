@@ -84,6 +84,7 @@ public class ExploreActivity extends Activity {
             };
         }
         if (savedInstanceState != null) path = savedInstanceState.getString("path", "");
+        else if (getIntent().getStringExtra("path") != null) path = getIntent().getStringExtra("path"); // abrir en esa carpeta
 
         LinearLayout col = new LinearLayout(this);
         col.setOrientation(LinearLayout.VERTICAL);

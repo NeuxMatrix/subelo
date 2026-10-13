@@ -61,6 +61,10 @@ import javax.net.ssl.SSLSocketFactory;
  * GET  /api/amazon/albums    álbumes de Amazon Photos
  * POST /api/amazon/album     id=&title= o link=: el álbum del Echo
  * POST /api/amazon/sync      repasar ya;  POST /api/amazon/disconnect: olvidar la sesión de Amazon
+ * GET  /api/google           traer de Google Fotos (GoogleImport): ¿configurado?, clientId y la importación en curso
+ * POST /api/google/setup     client=&secret=: el cliente OAuth de Google Cloud;  POST /api/google/reset: olvidarlo
+ * POST /api/google/start     code=&verifier=&redirect=&path=: canjea el permiso y abre el selector de Google Fotos
+ * POST /api/google/cancel    parar;  POST /api/google/clear: olvidar la importación terminada
  *
  * Todo va cifrado con HTTPS (certificado propio del box, ver Tls.java). Si alguien escribe la
  * dirección con http://, se le redirige a https://.
@@ -362,6 +366,10 @@ final class HttpServer {
             amazon(method, path, user, params, out);
             return;
         }
+        if (path.equals("/api/google") || path.startsWith("/api/google/")) {
+            google(method, path, user, params, available ? st : null, out);
+            return;
+        }
         if (!available) {
             error(out, 503, st == null
                     ? "El box no tiene ningún disco configurado. Ábrelo en la tele y elige la carpeta del disco USB."
@@ -656,6 +664,63 @@ final class HttpServer {
             }
         } catch (IOException e) {
             error(out, 502, e.getMessage() == null ? "No se pudo hablar con Amazon" : e.getMessage());
+        }
+    }
+
+    // ---------- traer de Google Fotos ----------
+
+    private void google(String method, String path, String user, Map<String, String> params, Store st, OutputStream out)
+            throws IOException, JSONException {
+        if (path.equals("/api/google")) {
+            json(out, 200, GoogleImport.statusJson(ctx, user));
+            return;
+        }
+        if (!method.equals("POST")) {
+            error(out, 405, "Usa POST");
+            return;
+        }
+        // los fallos de Google van como 502 (o 400): el 401 lo reserva la app para «sesión de Súbelo caducada»
+        try {
+            if (path.equals("/api/google/setup")) {
+                GoogleImport.setup(ctx, params.get("client"), params.get("secret"));
+            } else if (path.equals("/api/google/reset")) {
+                GoogleImport.cancel(user);
+                GoogleImport.reset(ctx);
+            } else if (path.equals("/api/google/cancel")) {
+                GoogleImport.cancel(user);
+            } else if (path.equals("/api/google/clear")) {
+                GoogleImport.clear(user);
+            } else if (path.equals("/api/google/start")) {
+                String code = params.get("code"), verifier = params.get("verifier"), redirect = params.get("redirect");
+                if (code == null || code.isEmpty() || code.length() > 2000 || verifier == null || !verifier.matches("[A-Za-z0-9._~-]{43,128}")
+                        || redirect == null || !redirect.matches("http://(127\\.0\\.0\\.1|localhost)(:[0-9]{1,5})?/?")) {
+                    error(out, 400, "Petición de Google incompleta");
+                    return;
+                }
+                if (st == null) {
+                    error(out, 503, "El disco USB no está disponible. ¿Está conectado al box?");
+                    return;
+                }
+                String rel = cleanPath(params.get("path"));
+                Shares.Access acc = Shares.resolve(ctx, user, rel);
+                if (acc == null || acc.virtualRoot) {
+                    error(out, 404, "Elige una carpeta tuya o una que te hayan compartido para subir");
+                    return;
+                }
+                if (!acc.own && !acc.canAdd()) {
+                    error(out, 403, "Esta carpeta es de " + acc.owner + " y solo te deja verla.");
+                    return;
+                }
+                GoogleImport.start(ctx, user, acc.owner, acc.storeRel, rel, code, verifier, redirect);
+            } else {
+                error(out, 404, "No encontrado");
+                return;
+            }
+            json(out, 200, GoogleImport.statusJson(ctx, user));
+        } catch (GoogleImport.GoogleException e) {
+            error(out, e.code == 400 ? 400 : 502, e.getMessage());
+        } catch (IOException e) {
+            error(out, 502, e.getMessage() == null ? "No se pudo hablar con Google" : e.getMessage());
         }
     }
 
