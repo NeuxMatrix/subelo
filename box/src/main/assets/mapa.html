@@ -5,11 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <title>Súbelo · Mapa de fotos</title>
 <script>
-  // Mismo archivo en el box (navegador) y en la app del móvil (que pasa ?app=1&tema=oscuro|claro).
+  // Mismo archivo en el box (navegador) y en la app del móvil (que pasa ?app=1&tema=oscuro|claro);
+  // la web del box lo mete en su pestaña «Mapa» con ?embed=1&tema=….
   (function () {
     var q = new URLSearchParams(location.search), t = null;
     window.EN_APP = q.get('app') === '1';
-    if (EN_APP) t = q.get('tema') === 'oscuro' ? 'dark' : 'light';
+    window.EMBED = q.get('embed') === '1'; // dentro de la web del box (pestaña «Mapa»)
+    if (EN_APP || EMBED) t = q.get('tema') === 'oscuro' ? 'dark' : 'light';
     else { try { t = localStorage.getItem('subelo-tema'); } catch (e) {} }
     if (!t) t = window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
     document.documentElement.setAttribute('data-theme', t);
@@ -86,7 +88,7 @@ const dark = () => document.documentElement.getAttribute('data-theme') === 'dark
 const fmt = n => n.toLocaleString('es-ES');
 let all = [], year = '', fitted = false, layer = null, lastKey = '', vlist = [], vi = -1;
 
-if (EN_APP) { $('back').hidden = true; $('theme').hidden = true; }
+if (EN_APP || EMBED) { $('back').hidden = true; $('theme').hidden = true; }
 
 const map = L.map('map', {zoomControl: true, worldCopyJump: true}).setView([40.2, -3.7], 5);
 let tiles = null;
@@ -163,7 +165,7 @@ async function load() {
   let j;
   try {
     const r = await fetch('/api/places', {credentials: 'same-origin', cache: 'no-store'});
-    if (r.status === 401 && !EN_APP) { location.href = '/'; return; }
+    if (r.status === 401 && !EN_APP) { (EMBED ? top : window).location.href = '/'; return; }
     j = await r.json();
     if (!r.ok) throw new Error(j.error || 'Error ' + r.status);
   } catch (e) {

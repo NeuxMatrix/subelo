@@ -77,6 +77,17 @@ final class GoogleImport {
 
     private static final Map<String, Job> JOBS = new HashMap<String, Job>();
 
+    /** Desde la web: Google vuelve a esta dirección del ordenador (no hay nada escuchando) y se pega aquí. */
+    static final String WEB_REDIRECT = "http://127.0.0.1:53682";
+
+    /** Permiso pedido desde la web, esperando a que se pegue la dirección a la que volvió Google. */
+    private static final class Pending {
+        String verifier, state, owner, destRel, dest;
+        final long at = System.currentTimeMillis();
+    }
+
+    private static final Map<String, Pending> PENDING = new HashMap<String, Pending>();
+
     private GoogleImport() {}
 
     private static String tokenUrl() {
@@ -230,6 +241,77 @@ final class GoogleImport {
         j.thread.setDaemon(true);
         j.thread.start();
         return j;
+    }
+
+    // ---------- desde la web: el permiso se pide en otra pestaña y se pega la dirección final ----------
+
+    /** Dirección de Google para dar permiso desde la web (el box guarda el verificador PKCE). */
+    static String webAuthUrl(Context c, String user, String owner, String destRel, String dest) throws IOException {
+        String client = config(c).getProperty("client");
+        if (client == null) throw new GoogleException(409, "Falta configurar Google en Súbelo");
+        Pending pe = new Pending();
+        pe.verifier = random(48);
+        pe.state = random(16);
+        pe.owner = owner;
+        pe.destRel = destRel;
+        pe.dest = dest;
+        synchronized (PENDING) {
+            PENDING.put(user, pe);
+        }
+        String challenge;
+        try {
+            challenge = b64(java.security.MessageDigest.getInstance("SHA-256").digest(pe.verifier.getBytes("US-ASCII")));
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IOException(e.getMessage());
+        }
+        return "https://accounts.google.com/o/oauth2/v2/auth?client_id=" + enc(client) + "&redirect_uri=" + enc(WEB_REDIRECT)
+                + "&response_type=code&scope=" + enc(SCOPE) + "&code_challenge=" + challenge
+                + "&code_challenge_method=S256&state=" + pe.state + "&prompt=select_account";
+    }
+
+    /** La dirección (o el código) que el usuario ha pegado tras dar permiso en Google. */
+    static Job webFinish(Context c, String user, String pasted) throws IOException, JSONException {
+        Pending pe;
+        synchronized (PENDING) {
+            pe = PENDING.remove(user);
+        }
+        if (pe == null || System.currentTimeMillis() - pe.at > 30 * 60 * 1000L) {
+            throw new GoogleException(400, "Ha pasado demasiado tiempo: vuelve a pulsar «Elegir fotos en Google Fotos»");
+        }
+        pasted = pasted == null ? "" : pasted.trim();
+        String code = null, state = null, err = null;
+        int q = pasted.indexOf('?');
+        if (q >= 0 || pasted.contains("code=")) {
+            for (String kv : pasted.substring(q + 1).split("[&#]")) {
+                int i = kv.indexOf('=');
+                if (i <= 0) continue;
+                String k = kv.substring(0, i), v = java.net.URLDecoder.decode(kv.substring(i + 1), "UTF-8");
+                if (k.equals("code")) code = v;
+                else if (k.equals("state")) state = v;
+                else if (k.equals("error")) err = v;
+            }
+        } else if (!pasted.isEmpty()) {
+            code = pasted; // han pegado solo el código
+        }
+        if (err != null) throw new GoogleException(400, err.equals("access_denied") ? "No diste permiso a Súbelo" : "Google ha dicho que no (" + err + ")");
+        if (code == null || code.isEmpty() || code.length() > 2000) {
+            synchronized (PENDING) {
+                PENDING.put(user, pe); // que pueda volver a pegarla bien
+            }
+            throw new GoogleException(400, "Pega la dirección entera de la pestaña a la que te llevó Google (empieza por http://127.0.0.1)");
+        }
+        if (state != null && !state.equals(pe.state)) throw new GoogleException(400, "Esa dirección es de otro intento: vuelve a empezar");
+        return start(c, user, pe.owner, pe.destRel, pe.dest, code, pe.verifier, WEB_REDIRECT);
+    }
+
+    private static String random(int bytes) {
+        byte[] b = new byte[bytes];
+        new java.security.SecureRandom().nextBytes(b);
+        return b64(b);
+    }
+
+    private static String b64(byte[] b) {
+        return android.util.Base64.encodeToString(b, android.util.Base64.URL_SAFE | android.util.Base64.NO_PADDING | android.util.Base64.NO_WRAP);
     }
 
     /** Para la importación en curso (lo ya copiado se queda). */

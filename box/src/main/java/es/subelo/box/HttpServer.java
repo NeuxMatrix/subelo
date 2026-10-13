@@ -53,7 +53,8 @@ import javax.net.ssl.SSLSocketFactory;
  * GET|POST /api/zip?path=[&name=...]   descarga varios ficheros (o la carpeta entera) en un .zip
  *
  * POST /api/login           user=&password=[&client=app]: entra (la primera vez, fija la contraseña).
- *                            La web recibe una cookie; la app, un token para la cabecera X-Subelo-Token.
+ *                            La web recibe una cookie de sesión (solo en memoria: caduca a los 30 min sin usarse,
+ *                            a las 12 h o al cerrar el navegador); la app, un token para la cabecera X-Subelo-Token.
  * POST /api/logout           cierra la sesión
  * POST /api/echo             path=&name=…: copia esas fotos a la carpeta «Echo» (va al álbum de Amazon Photos)
  * GET  /api/amazon           estado del puente con Amazon Photos (EchoSync)
@@ -65,6 +66,7 @@ import javax.net.ssl.SSLSocketFactory;
  * POST /api/google/setup     client=&secret=: el cliente OAuth de Google Cloud;  POST /api/google/reset: olvidarlo
  * POST /api/google/start     code=&verifier=&redirect=&path=: canjea el permiso y abre el selector de Google Fotos
  * POST /api/google/cancel    parar;  POST /api/google/clear: olvidar la importación terminada
+ * POST /api/google/auth      path=: (web) dirección de Google para dar permiso;  POST /api/google/code url=: la de vuelta
  *
  * Todo va cifrado con HTTPS (certificado propio del box, ver Tls.java). Si alguien escribe la
  * dirección con http://, se le redirige a https://.
@@ -95,6 +97,7 @@ final class HttpServer {
 
     synchronized void start() throws IOException {
         if (running) return;
+        Users.forgetOldWebSessions(ctx);
         EchoSync.start(ctx);
         SSLContext tls = Tls.context(ctx.getFilesDir());
         try {
@@ -311,9 +314,10 @@ final class HttpServer {
         } else if (params.containsKey("name")) {
             names.add(params.get("name"));
         }
+        // el móvil manda su token en una cabecera; la web, una cookie de sesión que solo vive en memoria
         String token = headers.get("x-subelo-token");
-        if (token == null) token = cookie(headers.get("cookie"), "subelo_s");
-        String user = Users.userFor(ctx, token);
+        String webToken = token == null ? cookie(headers.get("cookie"), "subelo_s") : null;
+        String user = token != null ? Users.userFor(ctx, token) : Users.webUserFor(ctx, webToken);
 
         if (path.equals("/api/users")) {
             JSONArray arr = new JSONArray();
@@ -335,6 +339,7 @@ final class HttpServer {
         }
         if (path.equals("/api/logout")) {
             Users.endSession(ctx, token);
+            Users.endWebSession(webToken);
             byte[] b = "{\"ok\":true}".getBytes(UTF8);
             sendHead(out, 200, "application/json; charset=utf-8", b.length,
                     "Set-Cookie: subelo_s=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Strict\r\n");
@@ -690,10 +695,12 @@ final class HttpServer {
                 GoogleImport.cancel(user);
             } else if (path.equals("/api/google/clear")) {
                 GoogleImport.clear(user);
-            } else if (path.equals("/api/google/start")) {
+            } else if (path.equals("/api/google/start") || path.equals("/api/google/auth")) {
+                boolean web = path.equals("/api/google/auth"); // la web: primero la dirección de Google
                 String code = params.get("code"), verifier = params.get("verifier"), redirect = params.get("redirect");
-                if (code == null || code.isEmpty() || code.length() > 2000 || verifier == null || !verifier.matches("[A-Za-z0-9._~-]{43,128}")
-                        || redirect == null || !redirect.matches("http://(127\\.0\\.0\\.1|localhost)(:[0-9]{1,5})?/?")) {
+                if (!web && (code == null || code.isEmpty() || code.length() > 2000 || verifier == null
+                        || !verifier.matches("[A-Za-z0-9._~-]{43,128}")
+                        || redirect == null || !redirect.matches("http://(127\\.0\\.0\\.1|localhost)(:[0-9]{1,5})?/?"))) {
                     error(out, 400, "Petición de Google incompleta");
                     return;
                 }
@@ -711,7 +718,15 @@ final class HttpServer {
                     error(out, 403, "Esta carpeta es de " + acc.owner + " y solo te deja verla.");
                     return;
                 }
+                if (web) {
+                    JSONObject o = GoogleImport.statusJson(ctx, user);
+                    o.put("authUrl", GoogleImport.webAuthUrl(ctx, user, acc.owner, acc.storeRel, rel));
+                    json(out, 200, o);
+                    return;
+                }
                 GoogleImport.start(ctx, user, acc.owner, acc.storeRel, rel, code, verifier, redirect);
+            } else if (path.equals("/api/google/code")) {
+                GoogleImport.webFinish(ctx, user, params.get("url"));
             } else {
                 error(out, 404, "No encontrado");
                 return;
@@ -1154,7 +1169,7 @@ final class HttpServer {
         }
         clearFails(ip);
         boolean app = "app".equals(params.get("client"));
-        String token = Users.newSession(ctx, user, app ? Users.APP_MS : Users.WEB_MS);
+        String token = app ? Users.newSession(ctx, user, Users.APP_MS) : Users.newWebSession(user);
         JSONObject o = new JSONObject();
         o.put("ok", true);
         o.put("user", user);
@@ -1162,8 +1177,7 @@ final class HttpServer {
         if (app) o.put("token", token);
         byte[] b = o.toString().getBytes(UTF8);
         sendHead(out, 200, "application/json; charset=utf-8", b.length, app ? "Cache-Control: no-store\r\n"
-                : "Set-Cookie: subelo_s=" + token + "; Path=/; Max-Age=" + (Users.WEB_MS / 1000)
-                + "; HttpOnly; Secure; SameSite=Strict\r\nCache-Control: no-store\r\n");
+                : "Set-Cookie: subelo_s=" + token + "; Path=/; HttpOnly; Secure; SameSite=Strict\r\nCache-Control: no-store\r\n");
         out.write(b);
         out.flush();
     }

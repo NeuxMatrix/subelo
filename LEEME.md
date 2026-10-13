@@ -14,6 +14,7 @@ No hace falta root ni Internet: todo va por tu red local.
 
 ## Novedades: álbumes, carpetas con portada y mapa
 
+- **Web del ordenador renovada** (2.16): ahora hace lo mismo que la app del móvil, con cuatro apartados arriba: **Mis fotos** (carpetas con portada y número de fotos, subir, arrastrar, elegir para descargar, mandar al Echo, renombrar, mover, borrar y compartir), **Mapa**, **Echo** (estado, cambiar de álbum, repasar, desconectar) y **Google Fotos** (traer fotos eligiéndolas en Google). La contraseña se vuelve a pedir tras 30 minutos sin usarla, a las 12 horas, al cerrar el navegador y si el box se reinicia.
 - **Subir álbumes enteros** (móvil, «▤ Subir álbumes enteros»): eliges uno o varios álbumes de la galería (Cámara, WhatsApp, Descargas…) y cada uno va a su propia carpeta del disco, dentro de la carpeta de destino. Lo que ya estaba subido se salta, así que repetirlo solo sube lo nuevo. En Android 14, si al dar permiso elegiste «Seleccionar fotos», solo se ven esas: cámbialo a «Permitir todo».
 - **Mis fotos por carpetas** (móvil): cada carpeta muestra una foto de portada y cuántas fotos tiene.
 - **Compartir carpetas entre Fer y Julss**: en una carpeta tuya pulsa «👥» (móvil) o «👥 Compartir» (web) y elige si el otro solo puede verla y descargar, o también añadir fotos. Lo que te comparten aparece en tu carpeta como «👥 Compartido conmigo». Borrar, mover y renombrar solo puede el dueño. Si mueves o renombras una carpeta compartida, sigue compartida; si la borras, deja de estarlo.
@@ -38,7 +39,7 @@ Secretos del repositorio (Settings › Secrets and variables › Actions): `KEYS
 
 ## Versión 1.3: usuarios Fer y Julss
 
-Al abrir la app del móvil o la web sale «¿Quién eres?» con dos botones, **Fer** y **Julss**. La primera vez que pulsas tu nombre inventas tu contraseña; después la escribes para entrar. El móvil recuerda la sesión (botón «Cerrar sesión») y la web 30 días (botón «Salir»). Cada uno solo ve su carpeta del disco: `Fer/` y `Julss/` dentro de la carpeta elegida en el box. El PIN desaparece.
+Al abrir la app del móvil o la web sale «¿Quién eres?» con dos botones, **Fer** y **Julss**. La primera vez que pulsas tu nombre inventas tu contraseña; después la escribes para entrar. El móvil recuerda la sesión (botón «Cerrar sesión»); la web la vuelve a pedir tras 30 minutos sin usarla (botón «Salir»). Cada uno solo ve su carpeta del disco: `Fer/` y `Julss/` dentro de la carpeta elegida en el box. El PIN desaparece.
 
 Si ya habías subido algo antes de la 1.3, está fuera de esas carpetas: muévelo dentro de `Fer/` o `Julss/` desde un ordenador con el disco conectado.
 
@@ -137,11 +138,14 @@ Las fotos que ya están en el disco (mismo nombre y tamaño) no se vuelven a sub
 
 Abre en el navegador (Chrome, Edge, Firefox, Safari) la dirección que sale en la tele, por ejemplo `https://192.168.1.50:8765` y entra con tu usuario. Si escribes la dirección sin `https://`, el box te redirige solo. Guárdala en favoritos.
 
-La primera vez el navegador dirá que «la conexión no es privada». Es normal: el box usa un certificado propio que no firma ninguna empresa. Pulsa «Configuración avanzada» › «Continuar a …». La conexión va cifrada igualmente. El navegador recuerda la sesión 30 días (botón «Salir» para cerrarla).
+La primera vez el navegador dirá que «la conexión no es privada». Es normal: el box usa un certificado propio que no firma ninguna empresa. Pulsa «Configuración avanzada» › «Continuar a …». La conexión va cifrada igualmente. La contraseña se vuelve a pedir tras 30 minutos sin usar la web, a las 12 horas, al cerrar el navegador o si el box se reinicia (botón «Salir» para cerrarla antes).
 
-- **Ver**: navegas por las carpetas con miniaturas. Clic en una foto o vídeo para verlo en grande; flechas del teclado para pasar.
-- **Subir**: «Subir fotos», «Subir una carpeta» (mantiene sus subcarpetas) o **arrastra** fotos y carpetas a la ventana.
-- **Descargar**: marca las casillas y pulsa «Descargar seleccionadas», o «Descargar esta carpeta (.zip)». Desde el visor, «Descargar» baja la foto suelta.
+Arriba hay cuatro apartados:
+
+- **Mis fotos**: carpetas con su portada y cuántas fotos tienen. Clic en una foto o vídeo para verlo en grande (flechas del teclado o deslizar para pasar). «Subir fotos», «Subir carpeta» (mantiene sus subcarpetas) o **arrastra** fotos y carpetas a la ventana. Marca las casillas (o «Elegir todo») y abajo sale la barra para **Descargar**, **📺 Al Echo**, **Renombrar**, **Mover** y **Borrar**; el visor tiene los mismos botones. «Carpeta .zip» baja la carpeta entera y «👥 Compartir» la comparte con el otro usuario.
+- **Mapa**: el mismo mapa de fotos que en el móvil.
+- **Echo**: si Amazon está conectado, cuántas fotos hay en el álbum, «Repasar ahora», «Cambiar de álbum» y «Desconectar Amazon». Para entrar en Amazon la primera vez hace falta la app del móvil (Amazon solo deja iniciar sesión en su propia página).
+- **Google Fotos**: «Elegir fotos» pregunta la carpeta y abre Google en otra pestaña. Elige la cuenta y da permiso; Google te lleva a una página que no carga (empieza por `http://127.0.0.1`), es normal: copia esa dirección, pégala en Súbelo y pulsa «Continuar». Se abre el selector de Google Fotos y el box copia lo que elijas. La llave de Google también se puede poner aquí.
 
 ## 7. ¿Y fuera de casa?
 
@@ -171,7 +175,7 @@ Tal como está, solo funciona con el móvil u ordenador conectados a la red de c
 - **El móvil reconoce a su box.** Al emparejar memoriza su «código del box» (la huella del certificado). Después solo habla con ese box: si otro aparato intenta hacerse pasar por él, la app se niega y te avisa. Por eso conviene comprobar que el código del móvil y el de la tele coinciden al emparejar.
 - **Dos usuarios, Fer y Julss, cada uno con su contraseña y su carpeta.** Cada uno pone su contraseña la primera vez que entra y solo ve su carpeta del disco (`Fer/` o `Julss/`); el otro no puede verla ni con la dirección exacta. Las contraseñas se guardan cifradas (PBKDF2 con sal). Tras 5 contraseñas incorrectas, ese aparato queda bloqueado 5 minutos (y si hay muchos fallos en toda la red, se bloquea todo 10 minutos). Desde la tele se puede borrar una contraseña olvidada; eso cierra sus sesiones.
 - **Ojo con la primera vez:** quien pulse primero un nombre sin contraseña la elige. Entrad los dos cuanto antes.
-- **Web con sesión segura.** La contraseña no aparece en ninguna dirección ni en el historial; el navegador guarda una cookie protegida (solo HTTPS, inaccesible para otras webs).
+- **Web con sesión segura.** La contraseña no aparece en ninguna dirección ni en el historial; el navegador guarda una cookie protegida (solo HTTPS, inaccesible para otras webs) que caduca tras 30 minutos sin usarla, a las 12 horas, al cerrar el navegador o al reiniciar el box. Todo lo que no sea la pantalla de entrada pide sesión.
 - Solo funciona dentro de tu red; no hay nada abierto a Internet. **No abras el puerto 8765 en el router.** Para usarlo desde fuera, Tailscale.
 - Solo el dueño de una carpeta puede borrar, mover o renombrar lo que hay en ella (lo borrado no va a una papelera), y nadie puede salirse de la carpeta del disco.
 - **Traer de Google Fotos** solo lee las fotos que eliges en el selector de Google, y el permiso se olvida al terminar la copia; la llave de Google (cliente OAuth) se guarda en la memoria interna del box.

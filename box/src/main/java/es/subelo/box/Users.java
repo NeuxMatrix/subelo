@@ -19,17 +19,33 @@ import javax.crypto.spec.PBEKeySpec;
 /**
  * Los dos usuarios de Súbelo. Cada uno pone su contraseña la primera vez que entra y solo ve
  * su carpeta del disco. Las contraseñas se guardan cifradas (PBKDF2 con sal), nunca en claro.
- * Las sesiones abiertas (móvil o navegador) se guardan para que sobrevivan a un reinicio del box.
+ * Las sesiones del móvil se guardan para que sobrevivan a un reinicio del box. Las del navegador
+ * solo viven en memoria: caducan tras {@link #WEB_IDLE_MS} sin usarse, a las {@link #WEB_MAX_MS} como
+ * mucho, al cerrar el navegador o al reiniciarse el box, y entonces la web vuelve a pedir la contraseña.
  */
 final class Users {
     static final String[] NAMES = {"Fer", "Julss"};
     static final int MIN_LENGTH = 4;
-    static final long WEB_MS = 30L * 24 * 60 * 60 * 1000L;
+    static final long WEB_IDLE_MS = 30L * 60 * 1000L;
+    static final long WEB_MAX_MS = 12L * 60 * 60 * 1000L;
     static final long APP_MS = 365L * 24 * 60 * 60 * 1000L;
     private static final int ITERATIONS = 20000;
     private static final SecureRandom RANDOM = new SecureRandom();
 
     private static Properties users, sessions;
+
+    /** Sesión de la web (en memoria): usuario, cuándo empezó y cuándo se usó por última vez. */
+    private static final class Web {
+        final String user;
+        final long started = System.currentTimeMillis();
+        long used = started;
+
+        Web(String user) {
+            this.user = user;
+        }
+    }
+
+    private static final Map<String, Web> WEB = new java.util.HashMap<String, Web>();
 
     private Users() {}
 
@@ -78,9 +94,66 @@ final class Users {
             if (String.valueOf(it.next().getValue()).startsWith(user + "|")) it.remove();
         }
         save(c, s, "sesiones.properties");
+        for (Iterator<Web> it = WEB.values().iterator(); it.hasNext(); ) {
+            if (it.next().user.equals(user)) it.remove();
+        }
     }
 
     // ---------- sesiones ----------
+
+    static synchronized String newWebSession(String user) {
+        byte[] b = new byte[24];
+        RANDOM.nextBytes(b);
+        String token = hex(b);
+        long now = System.currentTimeMillis();
+        for (Iterator<Web> it = WEB.values().iterator(); it.hasNext(); ) {
+            Web w = it.next();
+            if (now - w.used > WEB_IDLE_MS || now - w.started > WEB_MAX_MS) it.remove();
+        }
+        WEB.put(key(token), new Web(user));
+        return token;
+    }
+
+    /** Usuario de una sesión de la web (y la da por usada), o null si no vale o ha caducado. */
+    static synchronized String webUserFor(Context c, String token) {
+        if (token == null || token.isEmpty() || token.length() > 100) return null;
+        String k = key(token);
+        Web w = WEB.get(k);
+        if (w == null) return null;
+        long now = System.currentTimeMillis();
+        if (now - w.used > WEB_IDLE_MS || now - w.started > WEB_MAX_MS || !hasPassword(c, w.user)) {
+            WEB.remove(k);
+            return null;
+        }
+        w.used = now;
+        return w.user;
+    }
+
+    static synchronized void endWebSession(String token) {
+        if (token != null && !token.isEmpty()) WEB.remove(key(token));
+    }
+
+    /**
+     * Hasta la 2.15 la web guardaba sesiones de 30 días en el mismo fichero que el móvil: se borran
+     * (las del móvil duran un año, así que caducan mucho más tarde).
+     */
+    static synchronized void forgetOldWebSessions(Context c) {
+        Properties s = loadSessions(c);
+        long limit = System.currentTimeMillis() + 31L * 24 * 60 * 60 * 1000L;
+        boolean changed = false;
+        for (Iterator<Map.Entry<Object, Object>> it = s.entrySet().iterator(); it.hasNext(); ) {
+            if (expiry(String.valueOf(it.next().getValue())) < limit) {
+                it.remove();
+                changed = true;
+            }
+        }
+        if (changed) {
+            try {
+                save(c, s, "sesiones.properties");
+            } catch (IOException ignored) {
+            }
+        }
+    }
 
     static synchronized String newSession(Context c, String user, long ms) throws IOException {
         byte[] b = new byte[24];

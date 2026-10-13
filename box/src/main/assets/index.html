@@ -17,67 +17,129 @@
   @font-face { font-family: "Space Grotesk"; src: url(/static/SpaceGrotesk-Medium.ttf) format("truetype"); font-weight: 500; font-display: swap; }
   @font-face { font-family: "Space Grotesk"; src: url(/static/SpaceGrotesk-Bold.ttf) format("truetype"); font-weight: 700; font-display: swap; }
   @font-face { font-family: "Space Mono"; src: url(/static/SpaceMono-Bold.ttf) format("truetype"); font-weight: 700; font-display: swap; }
-  :root { --purple:#7B2FF7; --orange:#FF6B1A; --black:#111; --paper:#FFF4E6; --snow:#fff; --ink:#111; --cream:#FFF4E6; --surface:#fff; --lilac:#E4D6FF; --peach:#FFD9C2; --red:#E5322D; --b:3px solid var(--ink); --sh:5px 5px 0 var(--ink); color-scheme: light; }
+  :root { --purple:#7B2FF7; --orange:#FF6B1A; --black:#111; --paper:#FFF4E6; --snow:#fff; --ink:#111; --cream:#FFF4E6; --surface:#fff; --lilac:#E4D6FF; --peach:#FFD9C2; --red:#E5322D; --green:#14A44D; --b:3px solid var(--ink); --sh:5px 5px 0 var(--ink); color-scheme: light; }
   html[data-theme=dark] { --ink:#F3EADF; --cream:#16121C; --surface:#241D2E; --lilac:#2E2148; --peach:#47291A; color-scheme: dark; }
   * { box-sizing: border-box; }
   body { font-family: "Space Grotesk", system-ui, sans-serif; font-weight: 500; background: var(--cream); color: var(--ink); margin: 0; }
   .mono { font-family: "Space Mono", ui-monospace, monospace; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; }
-  header { position: sticky; top: 0; z-index: 5; background: var(--cream); border-bottom: var(--b); }
-  .top { display: flex; align-items: center; gap: 14px; padding: 12px 16px; background: var(--black); color: var(--paper); flex-wrap: wrap; }
-  .top img { width: 46px; height: 46px; border: 3px solid var(--paper); }
-  h1 { font-family: "Archivo Black", Impact, sans-serif; font-size: 2rem; margin: 0; line-height: 1; letter-spacing: .01em; text-shadow: 3px 3px 0 var(--purple); }
-  #info { margin-left: auto; font-size: .78rem; background: var(--orange); color: var(--black); padding: 6px 10px; border: 2px solid var(--paper); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .tools { padding: 12px 16px 14px; }
-  #crumbs { margin: 0 0 12px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: .9rem; }
+  [hidden] { display: none !important; }
+
+  /* cabecera */
+  header { position: sticky; top: 0; z-index: 6; background: var(--black); color: var(--paper); border-bottom: 3px solid var(--ink); }
+  .top { display: flex; align-items: center; gap: 12px; padding: 10px 16px; flex-wrap: wrap; }
+  .top img { width: 42px; height: 42px; border: 3px solid var(--paper); }
+  h1 { font-family: "Archivo Black", Impact, sans-serif; font-size: 1.8rem; margin: 0; line-height: 1; text-shadow: 3px 3px 0 var(--purple); }
+  nav { display: flex; gap: 8px; flex-wrap: wrap; }
+  nav a { font-family: "Space Mono", monospace; font-weight: 700; text-transform: uppercase; font-size: .8rem; color: var(--paper); text-decoration: none; border: 2px solid var(--paper); padding: 7px 11px; }
+  nav a:hover { background: var(--purple); color: #fff; }
+  nav a.on { background: var(--orange); color: var(--black); border-color: var(--orange); box-shadow: 3px 3px 0 var(--purple); }
+  .right { margin-left: auto; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  #info { font-size: .72rem; color: var(--paper); opacity: .85; max-width: 330px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #who { background: var(--purple); color: var(--snow); border: 2px solid var(--paper); padding: 6px 10px; font-size: .75rem; }
+  #theme { background: var(--paper); color: var(--black); border-color: var(--paper); box-shadow: 3px 3px 0 var(--purple); padding: 6px 10px; }
+  #logout { padding: 6px 10px; background: var(--black); color: var(--paper); border-color: var(--paper); box-shadow: none; }
+
+  /* botones */
+  button, label.btn, a.btn { font-family: "Space Mono", ui-monospace, monospace; font-weight: 700; text-transform: uppercase; font-size: .82rem; background: var(--surface); color: var(--ink); border: var(--b); box-shadow: var(--sh); padding: 9px 13px; cursor: pointer; transition: transform .06s, box-shadow .06s; border-radius: 0; text-decoration: none; display: inline-block; }
+  button:hover, label.btn:hover, a.btn:hover { background: var(--lilac); }
+  button:active, label.btn:active, a.btn:active { transform: translate(5px, 5px); box-shadow: 0 0 0 var(--ink); }
+  button:focus-visible, label.btn:focus-within, a:focus-visible { outline: 3px solid var(--orange); outline-offset: 3px; }
+  .main { background: var(--orange) !important; color: var(--black) !important; }
+  .alt { background: var(--purple) !important; color: #fff !important; }
+  .danger { background: var(--red) !important; color: #fff !important; }
+  button:disabled { opacity: .45; cursor: default; transform: none; }
+  input[type=file] { display: none; }
+  input[type=text], input[type=password], input[type=url] { display: block; width: 100%; font: inherit; font-size: 1rem; padding: 10px 12px; margin: 10px 0 0; border: var(--b); background: var(--cream); color: var(--ink); border-radius: 0; }
+  input:focus { outline: 3px solid var(--orange); outline-offset: 2px; }
+  .bar { display: flex; flex-wrap: wrap; gap: 10px; }
+
+  /* explorador */
+  .tools { padding: 14px 16px 6px; }
+  #crumbs { margin: 0 0 12px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: .85rem; }
   #crumbs a { color: var(--ink); text-decoration: none; background: var(--surface); padding: 4px 10px; border: 2px solid var(--ink); cursor: pointer; }
   #crumbs a:last-child { background: var(--purple); color: #fff; }
   #crumbs a:hover { background: var(--orange); color: var(--black); }
-  .bar { display: flex; flex-wrap: wrap; gap: 10px; }
-  button, label.btn, a.btn { font-family: "Space Mono", ui-monospace, monospace; font-weight: 700; text-transform: uppercase; font-size: .85rem; background: var(--surface); color: var(--ink); border: var(--b); box-shadow: var(--sh); padding: 9px 13px; cursor: pointer; transition: transform .06s, box-shadow .06s; border-radius: 0; }
-  a.btn { text-decoration: none; display: inline-block; }
-  button:hover, label.btn:hover, a.btn:hover { background: var(--lilac); }
-  button:active, label.btn:active, a.btn:active { transform: translate(5px, 5px); box-shadow: 0 0 0 var(--ink); }
-  button:focus-visible, label.btn:focus-within { outline: 3px solid var(--orange); outline-offset: 3px; }
-  .main { background: var(--orange) !important; color: var(--black) !important; }
-  .alt { background: var(--purple) !important; color: #fff !important; }
-  button:disabled { opacity: .45; cursor: default; transform: none; }
-  input[type=file] { display: none; }
-  main { padding: 20px 16px 120px; }
-  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 18px; }
-  .tile { background: var(--surface); border: var(--b); box-shadow: var(--sh); cursor: pointer; position: relative; transition: transform .06s, box-shadow .06s; }
+  #accessNote { margin: -4px 0 12px; font-size: .78rem; background: var(--lilac); border: 2px solid var(--ink); padding: 5px 10px; display: inline-block; }
+  .grid-wrap { padding: 16px 16px 130px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 18px; }
+  .tile { background: var(--surface); border: var(--b); box-shadow: var(--sh); cursor: pointer; position: relative; transition: transform .06s, box-shadow .06s; min-width: 0; }
   .tile:hover { transform: translate(-2px, -2px); box-shadow: 7px 7px 0 var(--ink); }
   .tile.sel { background: var(--orange); color: var(--black); box-shadow: 7px 7px 0 var(--purple); }
-  .tile .img { aspect-ratio: 1; display: flex; align-items: center; justify-content: center; background: var(--cream); border-bottom: var(--b); font-family: "Archivo Black", sans-serif; font-size: 1.4rem; overflow: hidden; }
+  .tile .img { aspect-ratio: 1; display: flex; align-items: center; justify-content: center; background: var(--cream); border-bottom: var(--b); font-family: "Archivo Black", sans-serif; font-size: 1.3rem; overflow: hidden; position: relative; }
   .tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
-  .tile .name { padding: 7px 9px 2px; font-size: .82rem; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .tile .meta { padding: 0 9px 8px; font-size: .68rem; }
-  .tile input { position: absolute; top: 8px; left: 8px; width: 22px; height: 22px; accent-color: var(--purple); }
+  .tile .name { padding: 7px 9px 2px; font-size: .84rem; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tile .meta { padding: 0 9px 8px; font-size: .66rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tile input { position: absolute; top: 8px; left: 8px; width: 22px; height: 22px; accent-color: var(--purple); z-index: 2; }
   .tile .play { position: absolute; top: 38%; left: 50%; transform: translate(-50%,-50%); width: 46px; height: 46px; display: flex; align-items: center; justify-content: center; background: var(--orange); border: var(--b); box-shadow: 3px 3px 0 var(--ink); font-size: 1.1rem; color: var(--black); }
   .folder { background: var(--purple); color: #fff; }
-  .folder .img { background: var(--purple); color: var(--paper); border-bottom: 3px solid var(--ink); padding: 10px; text-align: center; word-break: break-word; text-transform: uppercase; }
+  .folder .img { background: var(--purple); color: var(--paper); padding: 10px; text-align: center; word-break: break-word; font-size: 3rem; }
+  .folder .img img { position: absolute; inset: 0; }
+  .folder .badge { position: absolute; right: 8px; bottom: 8px; background: var(--orange); color: var(--black); border: 2px solid var(--ink); font: 700 .7rem "Space Mono", monospace; padding: 2px 6px; z-index: 1; }
   .folder .name, .folder .meta { color: var(--paper); }
+  .tile.folder.sel, .tile.folder.sel .img { background: var(--orange); }
+  .tile.folder.sel .name, .tile.folder.sel .meta { color: var(--black); }
+  .tile.folder.virtual, .tile.folder.virtual .img { background: var(--orange); color: var(--black); }
+  .tile.folder.virtual .name, .tile.folder.virtual .meta { color: var(--black); }
   #empty { padding: 40px 16px; text-align: center; border: 3px dashed var(--ink); background: var(--surface); }
+  #selbar { position: fixed; left: 50%; transform: translateX(-50%); bottom: 16px; z-index: 9; background: var(--black); border: 3px solid var(--paper); box-shadow: 8px 8px 0 var(--purple); padding: 10px 12px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; justify-content: center; width: max-content; max-width: calc(100vw - 24px); }
+  #selbar .n { color: var(--paper); font-size: .8rem; padding: 0 6px; }
+  #selbar button { box-shadow: 3px 3px 0 var(--paper); padding: 7px 10px; font-size: .76rem; }
   #drop { display: none; position: fixed; inset: 0; background: rgba(123,47,247,.85); border: 10px solid var(--ink); z-index: 20; align-items: center; justify-content: center; font-family: "Archivo Black", sans-serif; font-size: 2.4rem; color: var(--paper); text-transform: uppercase; text-align: center; padding: 20px; }
   #queue { position: fixed; right: 16px; bottom: 16px; width: min(400px, calc(100vw - 32px)); background: var(--cream); border: var(--b); box-shadow: 8px 8px 0 var(--purple); padding: 12px 14px; display: none; z-index: 10; }
-  #queue .t { font-size: .8rem; margin-bottom: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #queue .t { font-size: .78rem; margin-bottom: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #queue .x { position: absolute; top: -14px; right: -14px; padding: 2px 8px; box-shadow: 3px 3px 0 var(--ink); }
   .prog { height: 18px; border: var(--b); background: var(--surface); }
-  .prog div { height: 100%; width: 0; background: repeating-linear-gradient(45deg, var(--orange) 0 10px, #ff8a47 10px 20px); border-right: 3px solid var(--ink); }
-  #qlog { white-space: pre-line; font-size: .72rem; max-height: 90px; overflow: auto; margin-top: 8px; }
+  .prog div { height: 100%; width: 0; background: repeating-linear-gradient(45deg, var(--orange) 0 10px, #ff8a47 10px 20px); border-right: 3px solid var(--ink); transition: width .3s; }
+  #qlog { white-space: pre-line; font-size: .7rem; max-height: 90px; overflow: auto; margin-top: 8px; }
+
+  /* visor */
   #viewer { display: none; position: fixed; inset: 0; background: var(--black); z-index: 30; align-items: center; justify-content: center; }
-  #viewer img, #viewer video { max-width: calc(100vw - 40px); max-height: calc(100vh - 110px); border: 4px solid var(--paper); box-shadow: 10px 10px 0 var(--purple); }
-  #viewer .top { position: absolute; top: 0; left: 0; right: 0; display: flex; gap: 10px; align-items: center; padding: 10px 14px; background: var(--black); border-bottom: 3px solid var(--paper); }
-  #viewer .top span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--paper); font-size: .85rem; }
+  #viewer img, #viewer video { max-width: calc(100vw - 40px); max-height: calc(100vh - 140px); border: 4px solid var(--paper); box-shadow: 10px 10px 0 var(--purple); }
+  #viewer .vtop { position: absolute; top: 0; left: 0; right: 0; display: flex; gap: 8px; align-items: center; padding: 10px 14px; background: var(--black); border-bottom: 3px solid var(--paper); flex-wrap: wrap; }
+  #viewer .vtop span { flex: 1; min-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--paper); font-size: .8rem; }
+  #viewer .vtop button { box-shadow: 3px 3px 0 var(--paper); padding: 7px 10px; font-size: .76rem; }
   #viewer .nav { position: absolute; top: 50%; transform: translateY(-50%); font-size: 1.6rem; padding: 10px 16px; }
   #viewer .nav:active { transform: translate(5px, calc(-50% + 5px)); }
-  #theme { background: var(--paper); color: var(--black); border-color: var(--paper); box-shadow: 4px 4px 0 var(--purple); padding: 7px 11px; }
-  #theme:active { box-shadow: 0 0 0 var(--purple); }
-  #who { background: var(--purple); color: var(--snow); border: 2px solid var(--paper); padding: 6px 10px; font-size: .78rem; }
-  #logout { padding: 7px 11px; }
+  #vinfo { position: absolute; bottom: 10px; left: 0; right: 0; text-align: center; color: var(--paper); font-size: .72rem; }
+  #prev { left: 14px; } #next { right: 18px; }
+
+  /* páginas: echo, google */
+  .page { max-width: 760px; margin: 0 auto; padding: 22px 16px 80px; }
+  .ptitle { font-family: "Archivo Black", Impact, sans-serif; font-size: 2.2rem; text-transform: uppercase; margin: 6px 0 8px; line-height: 1.05; }
+  .lead { font-size: 1.02rem; line-height: 1.45; margin: 0 0 18px; }
+  .card { background: var(--surface); border: var(--b); box-shadow: 7px 7px 0 var(--ink); padding: 18px; margin: 0 0 22px; }
+  .card .tag { display: inline-block; background: var(--orange); color: var(--black); font: 700 .8rem "Space Mono", monospace; text-transform: uppercase; padding: 4px 10px; border: 2px solid var(--ink); margin-bottom: 12px; }
+  .card .big { font-size: 1.1rem; font-weight: 700; line-height: 1.4; white-space: pre-line; }
+  .card .info { font-size: .78rem; margin-top: 10px; line-height: 1.6; white-space: pre-line; }
+  .card .bar { margin-top: 16px; }
+  .err { color: var(--red); font-weight: 700; margin-top: 10px; white-space: pre-line; }
+  .note { font-size: .72rem; line-height: 1.6; }
+  ol.steps { padding-left: 20px; line-height: 1.5; margin: 6px 0 4px; }
+  ol.steps li { margin-bottom: 6px; }
+  #secMapa iframe { display: block; width: 100%; height: calc(100vh - 70px); border: 0; }
+
+  /* ventanas */
+  .modal { display: none; position: fixed; inset: 0; z-index: 35; background: rgba(17,17,17,.6); align-items: center; justify-content: center; padding: 16px; }
+  .modal .box { background: var(--cream); border: var(--b); box-shadow: 10px 10px 0 var(--purple); width: min(520px, 100%); max-height: calc(100vh - 32px); display: flex; flex-direction: column; }
+  .modal h3 { font-family: "Archivo Black", sans-serif; text-transform: uppercase; margin: 0; padding: 14px 16px 6px; }
+  .modal .sub { padding: 0 16px 10px; font-size: .78rem; }
+  .modal .list { overflow: auto; border-top: var(--b); border-bottom: var(--b); background: var(--surface); flex: 1; min-height: 120px; }
+  .modal .list div { padding: 11px 16px; border-bottom: 2px solid var(--ink); cursor: pointer; font-weight: 700; }
+  .modal .list div:hover { background: var(--lilac); }
+  .modal .list .up { background: var(--lilac); }
+  .modal .row { display: flex; gap: 10px; flex-wrap: wrap; padding: 14px 16px 16px; }
+  .modal .pad { padding: 0 16px; }
+  #shareBox .box { padding: 16px; gap: 12px; }
+  #shareBox h3 { padding: 0 0 4px; }
+  #toast { position: fixed; left: 16px; bottom: 16px; z-index: 50; background: var(--black); color: var(--paper); border: 3px solid var(--paper); box-shadow: 6px 6px 0 var(--orange); padding: 12px 14px; max-width: min(460px, calc(100vw - 32px)); display: none; white-space: pre-line; }
+
+  /* entrar */
   #login { display: none; position: fixed; inset: 0; z-index: 40; background: var(--cream); overflow: auto; padding: 28px 18px; }
   #login .box { max-width: 560px; margin: 0 auto; }
   #login img { width: 72px; height: 72px; border: 3px solid var(--ink); box-shadow: 5px 5px 0 var(--ink); }
   #login h2 { font-family: "Archivo Black", Impact, sans-serif; font-size: 2.6rem; text-transform: uppercase; margin: 26px 0 4px; line-height: 1; }
   #login .sub { font-size: .8rem; margin-bottom: 18px; }
+  #loginWhy { background: var(--peach); border: 2px solid var(--ink); padding: 8px 12px; margin-bottom: 18px; font-weight: 700; }
   .who { display: block; width: 100%; text-align: left; margin: 0 0 22px; padding: 18px 22px 20px; box-shadow: 7px 7px 0 var(--ink); }
   .who b { display: block; font-family: "Archivo Black", Impact, sans-serif; font-size: 2.4rem; font-weight: 400; text-transform: uppercase; letter-spacing: 0; }
   .who span { font-size: .8rem; }
@@ -85,31 +147,16 @@
   .who.u1 { background: var(--purple) !important; color: var(--snow) !important; }
   #pwForm { display: none; border: var(--b); box-shadow: 7px 7px 0 var(--ink); background: var(--surface); padding: 18px; }
   #pwForm h3 { font-family: "Archivo Black", Impact, sans-serif; text-transform: uppercase; font-size: 1.5rem; margin: 0 0 6px; }
-  #pwForm input { display: block; width: 100%; box-sizing: border-box; font: inherit; font-size: 1.05rem; padding: 11px 12px; margin: 12px 0 0; border: var(--b); background: var(--cream); color: var(--ink); border-radius: 0; }
-  #pwForm input[hidden] { display: none; }
-  #pwForm input:focus { outline: 3px solid var(--orange); outline-offset: 2px; }
   #pwForm .row { display: flex; gap: 12px; margin-top: 18px; flex-wrap: wrap; }
   #pwErr { color: var(--red); font-weight: 700; margin-top: 10px; min-height: 1.2em; }
-  #prev { left: 14px; } #next { right: 18px; }
-  @media (max-width: 600px) { h1 { font-size: 1.5rem; } .grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 12px; } #info { margin-left: 0; } }
-  .danger { background: var(--red) !important; color: #fff !important; }
-  .tile.folder.sel { background: var(--orange); box-shadow: 7px 7px 0 var(--purple); }
-  .tile.folder.sel .img { background: var(--orange); color: var(--black); }
-  #pick { display: none; position: fixed; inset: 0; z-index: 35; background: rgba(17,17,17,.6); align-items: center; justify-content: center; padding: 16px; }
-  #pick .box { background: var(--cream); border: var(--b); box-shadow: 10px 10px 0 var(--purple); width: min(520px, 100%); max-height: calc(100vh - 32px); display: flex; flex-direction: column; }
-  #pick h3 { font-family: "Archivo Black", sans-serif; text-transform: uppercase; margin: 0; padding: 14px 16px 6px; }
-  #pickPath { padding: 0 16px 10px; font-size: .8rem; }
-  #pickList { overflow: auto; border-top: var(--b); border-bottom: var(--b); background: var(--surface); flex: 1; min-height: 120px; }
-  #pickList div { padding: 11px 16px; border-bottom: 2px solid var(--ink); cursor: pointer; font-weight: 700; }
-  #pickList div:hover { background: var(--lilac); }
-  #pickList .up { background: var(--lilac); }
-  #pick .row { display: flex; gap: 10px; flex-wrap: wrap; padding: 14px 16px 16px; }
-  #accessNote { margin: -4px 0 12px; font-size: .8rem; background: var(--lilac); border: 2px solid var(--ink); padding: 5px 10px; display: inline-block; }
-  .tile.folder.virtual, .tile.folder.virtual .img { background: var(--orange); color: var(--black); }
-  #shareBox { display: none; position: fixed; inset: 0; z-index: 36; background: rgba(17,17,17,.6); align-items: center; justify-content: center; padding: 16px; }
-  #shareBox .box { background: var(--cream); border: var(--b); box-shadow: 10px 10px 0 var(--purple); width: min(480px, 100%); padding: 16px; display: flex; flex-direction: column; gap: 12px; }
-  #shareBox h3 { font-family: "Archivo Black", sans-serif; text-transform: uppercase; margin: 0 0 4px; }
-  [hidden] { display: none !important; }
+
+  @media (max-width: 700px) {
+    h1 { font-size: 1.4rem; } .top img { width: 34px; height: 34px; }
+    .right { margin-left: 0; width: 100%; } #info { max-width: 100%; flex: 1; }
+    nav { width: 100%; } nav a { flex: 1; text-align: center; padding: 7px 4px; font-size: .7rem; }
+    .grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 12px; }
+    .ptitle { font-size: 1.7rem; }
+  }
 </style>
 </head>
 <body>
@@ -117,44 +164,138 @@
   <div class="top">
     <img src="/static/logo.png" alt="">
     <h1>SÚBELO</h1>
-    <div id="info" class="mono">Conectando…</div>
-    <span id="who" class="mono" hidden></span>
-    <button id="logout" hidden>Salir</button>
-    <button id="theme" title="Cambiar modo claro / oscuro"></button>
+    <nav id="nav" hidden>
+      <a href="#fotos/" data-s="fotos">▦ Mis fotos</a>
+      <a href="#mapa" data-s="mapa">◉ Mapa</a>
+      <a href="#echo" data-s="echo">📺 Echo</a>
+      <a href="#google" data-s="google">⬇ Google Fotos</a>
+    </nav>
+    <div class="right">
+      <div id="info" class="mono">Conectando…</div>
+      <span id="who" class="mono" hidden></span>
+      <button id="theme" title="Cambiar modo claro / oscuro"></button>
+      <button id="logout" hidden>Salir</button>
+    </div>
   </div>
+</header>
+
+<!-- ============ MIS FOTOS ============ -->
+<section id="secFotos" hidden>
   <div class="tools">
     <div id="crumbs" class="mono"></div>
     <div id="accessNote" class="mono" hidden></div>
     <div class="bar">
-      <label class="btn main">⬆ Subir fotos<input type="file" id="files" multiple></label>
-      <label class="btn">⬆ Subir carpeta<input type="file" id="folder" webkitdirectory multiple></label>
+      <label class="btn main" id="upFiles">⬆ Subir fotos<input type="file" id="files" multiple></label>
+      <label class="btn" id="upFolder">⬆ Subir carpeta<input type="file" id="folder" webkitdirectory multiple></label>
       <button id="mk">+ Carpeta</button>
-      <button id="selAll">Seleccionar todo</button>
-      <button id="dlSel" class="alt" disabled>⬇ Descargar</button>
+      <button id="selAll">☑ Elegir todo</button>
       <button id="dlAll">⬇ Carpeta .zip</button>
-      <button id="ren" disabled>✎ Renombrar</button>
-      <button id="mv" disabled>↦ Mover</button>
-      <button id="del" class="danger" disabled>🗑 Borrar</button>
       <button id="share" class="alt" hidden>👥 Compartir</button>
-      <a class="btn alt" href="/mapa.html">◉ Mapa de fotos</a>
     </div>
   </div>
-</header>
-<main>
-  <div class="grid" id="grid"></div>
-  <div id="empty" class="mono" hidden>Carpeta vacía · arrastra aquí fotos o carpetas</div>
-</main>
+  <div class="grid-wrap">
+    <div class="grid" id="grid"></div>
+    <div id="empty" class="mono" hidden>Carpeta vacía · arrastra aquí fotos o carpetas</div>
+  </div>
+  <div id="selbar" hidden>
+    <span class="n mono" id="selN"></span>
+    <button id="dlSel" class="main">⬇ Descargar</button>
+    <button id="echoSel" class="alt">📺 Al Echo</button>
+    <button id="ren">✎ Renombrar</button>
+    <button id="mv">↦ Mover</button>
+    <button id="del" class="danger">🗑 Borrar</button>
+    <button id="selNone">✕</button>
+  </div>
+</section>
+
+<!-- ============ MAPA ============ -->
+<section id="secMapa" hidden><iframe id="mapFrame" title="Mapa de mis fotos"></iframe></section>
+
+<!-- ============ ECHO ============ -->
+<section id="secEcho" class="page" hidden>
+  <h2 class="ptitle">Fotos al Echo</h2>
+  <p class="lead">Todo lo que haya en tu carpeta <b>«Echo»</b> del disco se sube a tu Amazon Photos y se añade al álbum que enseña tu Echo. Si quitas una foto de la carpeta, se quita del álbum. Para meter fotos: en <a href="#fotos/">Mis fotos</a> elige las que quieras y pulsa «📺 Al Echo».</p>
+  <div class="card">
+    <div class="tag">📺 // amazon photos</div>
+    <div class="big" id="echoState">Mirando el box…</div>
+    <div class="info mono" id="echoInfo"></div>
+    <div class="err" id="echoErr" hidden></div>
+    <div class="bar">
+      <button id="echoSync" class="main">↻ Repasar ahora</button>
+      <button id="echoAlbum" class="alt">Elegir el álbum del Echo</button>
+      <button id="echoOpen">▦ Abrir la carpeta Echo</button>
+      <button id="echoOff" class="danger">Desconectar Amazon</button>
+    </div>
+  </div>
+  <p class="note mono">Amazon no tiene una forma oficial de hacer esto: Súbelo usa la misma conexión que su web, así que puede dejar de ir si Amazon la cambia. Tu sesión de Amazon se guarda solo dentro del box (no en el disco) y se borra al pulsar «Desconectar». Para entrar en Amazon hace falta la app del móvil: Amazon solo deja iniciar sesión en su propia página.</p>
+</section>
+
+<!-- ============ GOOGLE FOTOS ============ -->
+<section id="secGoogle" class="page" hidden>
+  <h2 class="ptitle">Traer de Google Fotos</h2>
+  <p class="lead">Eliges las fotos en Google Fotos (también las de un álbum: búscalo por su nombre) y el box las copia a la carpeta del disco que digas, con su fecha original.</p>
+  <div class="card" id="gSetup" hidden>
+    <div class="tag">g // preparar google (una vez)</div>
+    <div>Google pide que cada app tenga su propia «llave». Se hace una vez y sirve para Fer y para Julss:</div>
+    <ol class="steps">
+      <li>Entra en <a href="https://console.cloud.google.com/" target="_blank" rel="noopener">console.cloud.google.com</a> con cualquiera de tus cuentas y crea un proyecto («Subelo»).</li>
+      <li>Busca <b>«Google Photos Picker API»</b> y pulsa Habilitar.</li>
+      <li>En <b>«Google Auth Platform»</b> rellena la pantalla de consentimiento (tipo Externo). En «Público › Usuarios de prueba» añade todas las cuentas de Google de las que quieras traer fotos.</li>
+      <li>En <b>«Clientes»</b> crea uno de tipo <b>«App de escritorio»</b> y copia el ID y el secreto (el secreto solo se ve al crearlo).</li>
+    </ol>
+    <input type="text" id="gClient" placeholder="ID de cliente (….apps.googleusercontent.com) o el JSON descargado" autocomplete="off">
+    <input type="password" id="gSecret" placeholder="Secreto de cliente (GOCSPX-…)" autocomplete="off">
+    <div class="bar"><button id="gSave" class="main">Guardar</button></div>
+  </div>
+  <div class="card" id="gMain" hidden>
+    <div class="tag">⬇ // google fotos</div>
+    <div class="big" id="gState"></div>
+    <div class="prog" id="gProg" hidden style="margin-top:12px"><div></div></div>
+    <div class="err" id="gErr" hidden></div>
+    <div id="gPaste" hidden style="margin-top:14px">
+      <ol class="steps">
+        <li>En la pestaña que se ha abierto, elige la cuenta de Google y da permiso a Súbelo.</li>
+        <li>Google te lleva a una página que <b>no carga</b> (su dirección empieza por <span class="mono">http://127.0.0.1</span>). Es normal.</li>
+        <li>Copia la dirección de esa pestaña y pégala aquí:</li>
+      </ol>
+      <input type="url" id="gUrl" placeholder="http://127.0.0.1:53682/?state=…&amp;code=…" autocomplete="off">
+      <div class="bar"><button id="gUrlOk" class="main">Continuar</button><a class="btn" id="gAuthLink" target="_blank" rel="noopener">Abrir otra vez Google</a><button id="gPasteNo">Cancelar</button></div>
+    </div>
+    <div class="bar" id="gBar">
+      <button id="gPick" class="main">Elegir fotos en Google Fotos</button>
+      <button id="gOpenPicker" class="alt">Abrir Google Fotos para elegir</button>
+      <button id="gView">▦ Ver la carpeta</button>
+      <button id="gCancel">Parar</button>
+    </div>
+  </div>
+  <p class="note mono">Google quita la ubicación a las fotos que da a otras apps: estas no saldrán en el mapa. Súbelo no guarda ningún permiso de Google: solo puede leer las fotos que elijas, y solo mientras se copian. Si ya están en la carpeta (mismo nombre y tamaño), se saltan.</p>
+  <button id="gReset" hidden>Cambiar la llave de Google</button>
+</section>
+
 <div id="drop">Suelta para subir ⬆</div>
-<div id="queue"><div class="t mono" id="qtitle"></div><div class="prog"><div id="qbar"></div></div><div id="qlog" class="mono"></div></div>
+<div id="queue"><button class="x" id="qx" title="Ocultar">✕</button><div class="t mono" id="qtitle"></div><div class="prog"><div id="qbar"></div></div><div id="qlog" class="mono"></div></div>
+<div id="toast"></div>
+
 <div id="viewer">
-  <div class="top"><span id="vname" class="mono"></span><button id="vdl" class="main">⬇ Descargar</button><button id="vmv">↦ Mover</button><button id="vdel" class="danger">🗑 Borrar</button><button id="vclose">✕</button></div>
+  <div class="vtop">
+    <span id="vname" class="mono"></span>
+    <button id="vdl" class="main">⬇</button>
+    <button id="vecho" class="alt">📺 Al Echo</button>
+    <button id="vren">✎</button>
+    <button id="vmv">↦ Mover</button>
+    <button id="vdel" class="danger">🗑</button>
+    <button id="vclose">✕</button>
+  </div>
   <button class="nav" id="prev">‹</button><div id="vbody"></div><button class="nav" id="next">›</button>
+  <div id="vinfo" class="mono"></div>
 </div>
+
 <div id="login">
   <div class="box">
     <div style="display:flex;align-items:center;justify-content:space-between"><img src="/static/logo.png" alt="Súbelo"><button id="theme2" class="mono"></button></div>
     <h2>¿Quién eres?</h2>
-    <div class="sub mono">CADA UNO VE SOLO SU CARPETA DEL DISCO</div>
+    <div class="sub mono">Cada uno ve solo su carpeta del disco · la web vuelve a pedir la contraseña tras 30 minutos sin usarla</div>
+    <div id="loginWhy" hidden></div>
     <div id="whoList"></div>
     <form id="pwForm" autocomplete="on">
       <h3 id="pwTitle"></h3>
@@ -167,50 +308,83 @@
     </form>
   </div>
 </div>
-<div id="shareBox"><div class="box">
+
+<div id="shareBox" class="modal"><div class="box">
   <h3 id="shareTitle"></h3>
   <button id="shareView"></button>
   <button id="shareAdd"></button>
   <button id="shareOff" class="danger">✕ Dejar de compartir</button>
   <button id="shareNo">Cancelar</button>
 </div></div>
-<div id="pick"><div class="box">
+
+<div id="pick" class="modal"><div class="box">
   <h3 id="pickTitle">Mover a…</h3>
-  <div id="pickPath" class="mono"></div>
-  <div id="pickList"></div>
+  <div id="pickPath" class="sub mono"></div>
+  <div id="pickList" class="list"></div>
   <div class="row"><button id="pickOk" class="main">✓ Mover aquí</button><button id="pickMk">+ Carpeta</button><button id="pickNo">Cancelar</button></div>
 </div></div>
+
+<div id="albumBox" class="modal"><div class="box">
+  <h3>¿Qué álbum enseña tu Echo?</h3>
+  <div class="sub mono" id="albumSub">Buscando tus álbumes…</div>
+  <div id="albumList" class="list"></div>
+  <div class="pad">
+    <input type="url" id="albumLink" placeholder="…o pega el enlace para compartir del álbum (amazon.es/photos/share/…)">
+  </div>
+  <div class="row"><button id="albumLinkOk" class="main">Usar este enlace</button><button id="albumNo">Cancelar</button></div>
+</div></div>
+
 <form id="zipForm" method="POST" action="/api/zip" style="display:none"></form>
 <script>
 try { localStorage.removeItem('subelo-pin'); } catch (e) {}
-let path = '';
-let files = [];
-const selected = new Set();
-const selDirs = new Set();
-const VIRTUAL = '👥 Compartido conmigo';
-let access = 'own', owner = null, sharedWith = {};
 const $ = id => document.getElementById(id);
 const enc = encodeURIComponent;
 const isImg = n => /\.(jpe?g|png|gif|webp|bmp|heic|heif)$/i.test(n);
 const isVid = n => /\.(mp4|mov|m4v|3gp|webm|mkv|avi)$/i.test(n);
 const join = (a, b) => a ? a + '/' + b : b;
 const fmt = b => b >= 1e9 ? (b / 1e9).toFixed(1) + ' GB' : b >= 1e6 ? (b / 1e6).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1e3)) + ' KB';
-const fileUrl = (n, dl) => '/api/file?path=' + enc(path) + '&name=' + enc(n) + (dl ? '&download=1' : '');
+const plural = (n, one, many) => n + ' ' + (n === 1 ? one : many);
+const VIRTUAL = '👥 Compartido conmigo';
+const IDLE_MS = 30 * 60 * 1000; // igual que el box: sin usar la web, se vuelve a pedir la contraseña
 
+let user = null, section = null;
+let path = '', files = [], folders = [];
+const selected = new Set(), selDirs = new Set();
+let access = 'own', owner = null, sharedWith = {};
+
+// ---------- utilidades ----------
+class Expired extends Error {}
 async function api(url, opts = {}) {
-  const r = await fetch(url, Object.assign({credentials: 'same-origin'}, opts));
+  const r = await fetch(url, Object.assign({credentials: 'same-origin', cache: 'no-store'}, opts));
   const j = await r.json().catch(() => ({}));
-  if (r.status === 401) { showLogin(); throw new Error('Tienes que entrar con tu usuario'); }
+  if (r.status === 401) { showLogin(user ? 'Tu sesión ha caducado: vuelve a escribir tu contraseña.' : null); throw new Expired('Tienes que entrar con tu usuario'); }
   if (!r.ok) throw new Error(j.error || ('Error ' + r.status));
   return j;
 }
-let user = null, loginUser = null, loginNew = false, minLen = 4;
-async function showLogin() {
+function post(url, fields) {
+  const body = new URLSearchParams();
+  for (const [k, v] of fields) body.append(k, v);
+  return api(url, {method: 'POST', body});
+}
+let toastT = 0;
+function toast(msg) {
+  const t = $('toast'); t.textContent = msg; t.style.display = 'block';
+  clearTimeout(toastT); toastT = setTimeout(() => { t.style.display = 'none'; }, 5000);
+}
+function fail(e) { if (!(e instanceof Expired)) alert('✖ ' + e.message); }
+function modal(id, on) { $(id).style.display = on ? 'flex' : 'none'; }
+
+// ---------- entrar / salir ----------
+let loginUser = null, loginNew = false, minLen = 4;
+async function showLogin(why) {
+  user = null;
+  $('nav').hidden = $('who').hidden = $('logout').hidden = true;
   $('login').style.display = 'block';
+  $('loginWhy').textContent = why || ''; $('loginWhy').hidden = !why;
   $('pwForm').style.display = 'none';
   const list = $('whoList'); list.innerHTML = ''; list.style.display = 'block';
   let j;
-  try { j = await (await fetch('/api/users', {credentials: 'same-origin'})).json(); }
+  try { j = await (await fetch('/api/users', {credentials: 'same-origin', cache: 'no-store'})).json(); }
   catch (e) { list.textContent = 'No se puede hablar con el box.'; return; }
   minLen = j.minLength || 4;
   j.users.forEach((u, i) => {
@@ -248,13 +422,61 @@ $('pwForm').onsubmit = async e => {
   const r = await fetch('/api/login', {method: 'POST', body, credentials: 'same-origin'});
   const j = await r.json().catch(() => ({}));
   if (!r.ok) { $('pwErr').textContent = j.error || 'No se pudo entrar.'; return; }
+  $('pw1').value = $('pw2').value = '';
   $('login').style.display = 'none';
-  path = ''; selected.clear(); load();
+  lastUse = Date.now();
+  start();
 };
-$('logout').onclick = async () => {
+async function logout(why) {
   await fetch('/api/logout', {method: 'POST', credentials: 'same-origin'}).catch(() => {});
-  user = null; $('grid').innerHTML = ''; showLogin();
-};
+  $('grid').innerHTML = ''; closeViewer();
+  showLogin(why);
+}
+$('logout').onclick = () => logout();
+// sin usar la web un rato: fuera (el box también lo hace por su cuenta)
+let lastUse = Date.now();
+['pointerdown', 'keydown', 'wheel', 'touchstart'].forEach(ev => addEventListener(ev, () => { lastUse = Date.now(); }, {passive: true}));
+setInterval(() => {
+  if (user && Date.now() - lastUse > IDLE_MS) logout('Por seguridad, vuelve a escribir tu contraseña: llevabas 30 minutos sin usar la web.');
+}, 30000);
+
+async function start() {
+  try {
+    const info = await api('/api/info');
+    if (!info.user) { showLogin(); return; }
+    user = info.user;
+    $('who').textContent = '👤 ' + user;
+    $('nav').hidden = $('who').hidden = $('logout').hidden = false;
+    $('info').textContent = info.available
+      ? (info.storage || '') + (info.free >= 0 ? ' · libre ' + fmt(info.free) + ' de ' + fmt(info.total) : '')
+      : 'El disco no está disponible en el box.';
+    route();
+  } catch (e) { if (!(e instanceof Expired)) $('info').textContent = e.message; }
+}
+
+// ---------- secciones (la dirección: #fotos/carpeta, #mapa, #echo, #google) ----------
+function route() {
+  if (!user) return;
+  const h = location.hash.slice(1);
+  const s = h.startsWith('fotos') || !h ? 'fotos' : ['mapa', 'echo', 'google'].includes(h) ? h : 'fotos';
+  if (s !== section) { section = s; stopPolls(); }
+  document.querySelectorAll('nav a').forEach(a => a.classList.toggle('on', a.dataset.s === s));
+  $('secFotos').hidden = s !== 'fotos'; $('secMapa').hidden = s !== 'mapa';
+  $('secEcho').hidden = s !== 'echo'; $('secGoogle').hidden = s !== 'google';
+  if (s === 'fotos') {
+    const p = h.startsWith('fotos/') ? decodeURIComponent(h.slice(6)) : '';
+    if (p !== path) { path = p; selected.clear(); selDirs.clear(); }
+    load();
+  } else if (s === 'mapa') {
+    const src = '/mapa.html?embed=1&tema=' + (document.documentElement.getAttribute('data-theme') === 'dark' ? 'oscuro' : 'claro');
+    if ($('mapFrame').getAttribute('src') !== src) $('mapFrame').setAttribute('src', src);
+  } else if (s === 'echo') echoLoad();
+  else if (s === 'google') gLoad();
+}
+addEventListener('hashchange', route);
+function go(p) { location.hash = '#fotos/' + enc(p); }
+
+// ---------- mis fotos ----------
 function crumbs() {
   const c = $('crumbs'); c.innerHTML = '';
   const parts = path ? path.split('/') : [];
@@ -262,58 +484,83 @@ function crumbs() {
   add('■ ' + (user || 'Disco'), '');
   parts.forEach((x, i) => { c.appendChild(document.createTextNode('›')); add(x, parts.slice(0, i + 1).join('/')); });
 }
-function go(p) { path = p; selected.clear(); selDirs.clear(); load(); }
+let loadN = 0;
 async function load() {
+  const n = ++loadN;
   try {
-    const info = await api('/api/info');
-    if (!info.user) { $('who').hidden = $('logout').hidden = true; showLogin(); return; }
-    user = info.user;
-    $('who').textContent = '👤 ' + user; $('who').hidden = $('logout').hidden = false;
-    $('info').textContent = info.available
-      ? (info.storage || '') + (info.free >= 0 ? ' · libre ' + fmt(info.free) + ' de ' + fmt(info.total) : '')
-      : 'El disco no está disponible en el box.';
     const j = await api('/api/list?path=' + enc(path));
-    files = j.files;
+    if (n !== loadN) return;
+    files = j.files; folders = j.folders;
     access = j.access || 'own'; owner = j.owner || null; sharedWith = j.sharedWith || {};
-    applyAccess();
-    crumbs();
-    render(j.folders);
-  } catch (e) { $('info').textContent = e.message; }
+    applyAccess(); crumbs(); render();
+    covers(n);
+  } catch (e) {
+    if (e instanceof Expired) return;
+    if (path) { toast('✖ ' + e.message); go(''); } else $('info').textContent = e.message;
+  }
+}
+// portadas y número de fotos de las carpetas (llega después: puede tardar un poco)
+async function covers(n) {
+  if (!folders.length) return;
+  let j;
+  try { j = await api('/api/albums?path=' + enc(path)); } catch (e) { return; }
+  if (n !== loadN) return;
+  const by = {}; (j.albums || []).forEach(a => { by[a.name] = a; });
+  document.querySelectorAll('.tile.folder').forEach(t => {
+    const a = by[t.dataset.name]; if (!a) return;
+    const parts = [];
+    if (a.media) parts.push(plural(a.media, 'foto o vídeo', 'fotos y vídeos'));
+    if (a.folders) parts.push(plural(a.folders, 'carpeta', 'carpetas'));
+    t.querySelector('.meta').textContent = parts.join(' · ') || 'Vacía';
+    if (a.cover) {
+      const img = document.createElement('img'); img.loading = 'lazy'; img.alt = '';
+      img.src = '/api/thumb?path=' + enc(a.cover.path) + '&name=' + enc(a.cover.name);
+      img.onerror = () => img.remove();
+      t.querySelector('.img').appendChild(img);
+    }
+    if (a.sharedWith && Object.keys(a.sharedWith).length) {
+      const b = document.createElement('div'); b.className = 'badge'; b.textContent = '👥 ' + Object.keys(a.sharedWith).join(', ');
+      t.querySelector('.img').appendChild(b);
+    }
+    if (a.owner) t.querySelector('.meta').textContent = 'De ' + a.owner + (a.mode === 'subir' ? ' · ver y añadir' : ' · solo ver');
+  });
 }
 // qué se puede hacer aquí: lo tuyo todo; lo compartido contigo, ver (y añadir si te dejan)
+function canAdd() { return access === 'own' || access === 'subir'; }
 function applyAccess() {
-  const own = access === 'own', add = own || access === 'subir';
-  $('files').parentElement.hidden = $('folder').parentElement.hidden = $('mk').hidden = !add;
-  $('del').hidden = $('mv').hidden = $('ren').hidden = !own;
+  const own = access === 'own';
+  $('upFiles').hidden = $('upFolder').hidden = $('mk').hidden = !canAdd();
   $('dlAll').hidden = $('selAll').hidden = access === 'virtual';
   $('share').hidden = !own || !path;
-  $('vdel').hidden = $('vmv').hidden = !own;
   const who = Object.keys(sharedWith);
   const note = access === 'virtual' ? '👥 Lo que te han compartido'
     : !own ? 'De ' + owner + (access === 'subir' ? ' · puedes ver y añadir fotos' : ' · solo ver')
     : who.length ? '👥 Compartida con ' + who.map(w => w + (sharedWith[w] === 'subir' ? ' (ver y añadir)' : ' (ver)')).join(', ') : '';
   $('accessNote').textContent = note; $('accessNote').hidden = !note;
 }
-function render(folders) {
+function selecting() { return selected.size + selDirs.size > 0; }
+function render() {
   const g = $('grid'); g.innerHTML = '';
   folders.forEach(f => {
     const virt = !path && f === VIRTUAL;
-    const t = document.createElement('div'); t.className = 'tile folder' + (selDirs.has(f) ? ' sel' : '') + (virt ? ' virtual' : '');
-    t.innerHTML = '<input type="checkbox"><div class="img"></div><div class="name mono">' + (virt ? '▸ De otros' : '▸ Carpeta') + '</div>';
-    t.querySelector('.img').textContent = f;
+    const t = document.createElement('div');
+    t.className = 'tile folder' + (selDirs.has(f) ? ' sel' : '') + (virt ? ' virtual' : '');
+    t.dataset.name = f;
+    t.innerHTML = '<input type="checkbox" title="Elegir"><div class="img">' + (virt ? '👥' : '▤') + '</div><div class="name"></div><div class="meta mono">' + (virt ? 'De otros' : 'Carpeta') + '</div>';
+    t.querySelector('.name').textContent = virt ? 'Compartido conmigo' : f;
     const cb = t.querySelector('input'); cb.checked = selDirs.has(f);
     if (virt || access !== 'own') cb.hidden = true;
     cb.onclick = ev => { ev.stopPropagation(); cb.checked ? selDirs.add(f) : selDirs.delete(f); t.classList.toggle('sel', cb.checked); updateSel(); };
-    t.onclick = () => go(join(path, f));
+    t.onclick = () => { if (selecting() && !cb.hidden) cb.click(); else go(join(path, f)); };
     g.appendChild(t);
   });
   files.forEach((f, i) => {
     const t = document.createElement('div'); t.className = 'tile' + (selected.has(f.name) ? ' sel' : '');
     const media = isImg(f.name) || isVid(f.name);
     const ext = (f.name.split('.').pop() || '?').toUpperCase();
-    t.innerHTML = '<input type="checkbox"><div class="img">' + (media ? '' : ext) + '</div><div class="name"></div><div class="meta mono"></div>';
+    t.innerHTML = '<input type="checkbox" title="Elegir"><div class="img">' + (media ? '' : ext.replace(/[<>&]/g, '')) + '</div><div class="name"></div><div class="meta mono"></div>';
     if (media) {
-      const img = document.createElement('img'); img.loading = 'lazy';
+      const img = document.createElement('img'); img.loading = 'lazy'; img.alt = '';
       img.src = '/api/thumb?path=' + enc(path) + '&name=' + enc(f.name);
       img.onerror = () => { img.remove(); if (!isVid(f.name)) t.querySelector('.img').textContent = 'FOTO'; };
       t.querySelector('.img').appendChild(img);
@@ -322,30 +569,32 @@ function render(folders) {
     t.querySelector('.name').textContent = f.name;
     t.querySelector('.meta').textContent = fmt(f.size) + (f.mtime ? ' · ' + new Date(f.mtime).toLocaleDateString() : '');
     const cb = t.querySelector('input'); cb.checked = selected.has(f.name);
-    if (access !== 'own') cb.title = 'Para descargar';
-    cb.onclick = ev => { ev.stopPropagation(); toggle(f.name, t, cb.checked); };
-    t.onclick = () => openViewer(i);
+    cb.onclick = ev => { ev.stopPropagation(); cb.checked ? selected.add(f.name) : selected.delete(f.name); t.classList.toggle('sel', cb.checked); updateSel(); };
+    t.onclick = () => { if (selecting()) cb.click(); else openViewer(i); };
     g.appendChild(t);
   });
   $('empty').hidden = folders.length + files.length > 0;
+  $('empty').textContent = access === 'virtual' ? 'Nadie te ha compartido nada todavía' : canAdd() ? 'Carpeta vacía · arrastra aquí fotos o carpetas' : 'Carpeta vacía';
   updateSel();
 }
-function toggle(n, t, on) { on ? selected.add(n) : selected.delete(n); t.classList.toggle('sel', on); updateSel(); }
 function updateSel() {
-  const n = selected.size + selDirs.size;
-  $('del').disabled = $('mv').disabled = n === 0;
-  $('ren').disabled = n !== 1;
-  $('del').textContent = '🗑 Borrar' + (n ? ' (' + n + ')' : '');
-  $('dlSel').disabled = selected.size === 0;
-  $('dlSel').textContent = '⬇ Descargar' + (selected.size ? ' (' + selected.size + ')' : '');
+  const n = selected.size + selDirs.size, own = access === 'own';
+  $('selbar').hidden = n === 0;
+  $('selN').textContent = plural(n, 'elegida', 'elegidas');
+  $('dlSel').hidden = selected.size === 0;
+  $('echoSel').hidden = ![...selected].some(isImg);
+  $('ren').hidden = !own || n !== 1;
+  $('mv').hidden = $('del').hidden = !own;
+  $('selAll').textContent = files.length && selected.size === files.length ? '☐ Quitar todo' : '☑ Elegir todo';
 }
+function clearSel() { selected.clear(); selDirs.clear(); render(); }
+$('selNone').onclick = clearSel;
 $('selAll').onclick = () => {
   const all = selected.size < files.length;
   selected.clear(); selDirs.clear(); if (all) files.forEach(f => selected.add(f.name));
-  document.querySelectorAll('.tile:not(.folder)').forEach((t, i) => { t.classList.toggle('sel', all); t.querySelector('input').checked = all; });
-  document.querySelectorAll('.tile.folder').forEach(t => { t.classList.remove('sel'); t.querySelector('input').checked = false; });
-  updateSel();
+  render();
 };
+const fileUrl = (n, dl) => '/api/file?path=' + enc(path) + '&name=' + enc(n) + (dl ? '&download=1' : '');
 function zip(names) {
   const f = $('zipForm'); f.innerHTML = '';
   const add = (k, v) => { const i = document.createElement('input'); i.type = 'hidden'; i.name = k; i.value = v; f.appendChild(i); };
@@ -357,43 +606,39 @@ $('dlSel').onclick = () => {
   if (names.length === 1) { location.href = fileUrl(names[0], true); return; }
   zip(names);
 };
-$('dlAll').onclick = () => { if (files.length) zip([]); };
+$('dlAll').onclick = () => { if (files.length) zip([]); else toast('En esta carpeta no hay archivos (las subcarpetas no van en el .zip).'); };
 $('mk').onclick = async () => {
   const n = prompt('Nombre de la nueva carpeta:');
-  if (!n) return;
-  const np = join(path, n.replace(/\//g, '-'));
-  try { await api('/api/mkdir?path=' + enc(np), {method: 'POST'}); go(np); } catch (e) { alert(e.message); }
+  if (!n || !n.trim()) return;
+  const np = join(path, n.trim().replace(/\//g, '-'));
+  try { await api('/api/mkdir?path=' + enc(np), {method: 'POST'}); go(np); } catch (e) { fail(e); }
 };
 
 // ---------- borrar, mover, renombrar ----------
-async function post(url, fields) {
-  const body = new URLSearchParams();
-  for (const [k, v] of fields) body.append(k, v);
-  return api(url, {method: 'POST', body});
-}
 function describe(nFiles, nDirs) {
   const a = [];
-  if (nFiles) a.push(nFiles + (nFiles === 1 ? ' archivo' : ' archivos'));
+  if (nFiles) a.push(plural(nFiles, 'archivo', 'archivos'));
   if (nDirs) a.push(nDirs + (nDirs === 1 ? ' carpeta con todo lo que tiene' : ' carpetas con todo lo que tienen'));
   return a.join(' y ');
 }
 async function removeItems(names, nDirs) {
   if (!confirm('¿Borrar ' + describe(names.length - nDirs, nDirs) + ' del disco?\n\nNo se puede deshacer.')) return false;
-  try { await post('/api/delete', [['path', path], ...names.map(n => ['name', n])]); }
-  catch (e) { alert(e.message); }
+  try { await post('/api/delete', [['path', path], ...names.map(n => ['name', n])]); toast('🗑 Borrado'); }
+  catch (e) { fail(e); }
   return true;
 }
-$('del').onclick = async () => {
-  if (await removeItems([...selected, ...selDirs], selDirs.size)) { selected.clear(); selDirs.clear(); load(); }
-};
-$('ren').onclick = async () => {
-  const old = [...selected, ...selDirs][0];
+$('del').onclick = async () => { if (await removeItems([...selected, ...selDirs], selDirs.size)) { selected.clear(); selDirs.clear(); load(); } };
+async function renameItem(old) {
   const n = prompt('Nombre nuevo:', old);
-  if (!n || n === old) return;
-  try { await post('/api/rename', [['path', path], ['name', old], ['new', n]]); selected.clear(); selDirs.clear(); load(); }
-  catch (e) { alert(e.message); }
+  if (!n || n === old) return null;
+  try { await post('/api/rename', [['path', path], ['name', old], ['new', n]]); return n; }
+  catch (e) { fail(e); return null; }
+}
+$('ren').onclick = async () => {
+  if (await renameItem([...selected, ...selDirs][0])) { selected.clear(); selDirs.clear(); load(); }
 };
-let pickPath = '', pickNames = [], pickDone = null;
+// elegir carpeta: para mover y para decir dónde van las fotos de Google
+let pickPath = '', pickNames = [], pickDone = null, pickMode = 'move';
 async function pickLoad() {
   $('pickPath').textContent = 'DISCO:/' + (user || '') + '/' + pickPath;
   const l = $('pickList'); l.innerHTML = '';
@@ -403,36 +648,40 @@ async function pickLoad() {
     l.appendChild(up);
   }
   try {
-    const j = await api('/api/folders?path=' + enc(pickPath));
+    let j;
+    try { j = await api('/api/folders?path=' + enc(pickPath)); }
+    catch (e) { if (e instanceof Expired || !pickPath) throw e; pickPath = ''; return pickLoad(); }
     j.folders.forEach(f => {
       const full = join(pickPath, f);
-      if (pickNames.some(n => join(path, n) === full)) return; // no dentro de sí misma
+      if (pickMode === 'move' && (f === VIRTUAL || pickNames.some(n => join(path, n) === full))) return; // no dentro de sí misma
       const d = document.createElement('div'); d.textContent = '▸ ' + f;
       d.onclick = () => { pickPath = full; pickLoad(); };
       l.appendChild(d);
     });
   } catch (e) { l.textContent = e.message; }
-  $('pickOk').disabled = pickPath === path;
+  $('pickOk').disabled = (pickMode === 'move' && pickPath === path) || pickPath === VIRTUAL;
 }
-function movePick(names, done) {
-  pickNames = names; pickDone = done; pickPath = '';
-  $('pickTitle').textContent = 'Mover ' + names.length + (names.length === 1 ? ' elemento' : ' elementos') + ' a…';
-  $('pick').style.display = 'flex';
+function choose(mode, title, ok, from, names, done) {
+  pickMode = mode; pickNames = names; pickDone = done; pickPath = from;
+  $('pickTitle').textContent = title; $('pickOk').textContent = ok;
+  modal('pick', true);
   pickLoad();
 }
-$('pickNo').onclick = () => { $('pick').style.display = 'none'; };
+function movePick(names, done) {
+  choose('move', 'Mover ' + plural(names.length, 'elemento', 'elementos') + ' a…', '✓ Mover aquí', '', names, async to => {
+    await post('/api/move', [['path', path], ['to', to], ...names.map(n => ['name', n])]);
+    toast('↦ Movido a /' + to); done();
+  });
+}
+$('pickNo').onclick = () => modal('pick', false);
 $('pickMk').onclick = async () => {
   const n = prompt('Nombre de la nueva carpeta:');
-  if (!n) return;
-  const np = join(pickPath, n.replace(/\//g, '-'));
-  try { await api('/api/mkdir?path=' + enc(np), {method: 'POST'}); pickPath = np; pickLoad(); } catch (e) { alert(e.message); }
+  if (!n || !n.trim()) return;
+  const np = join(pickPath, n.trim().replace(/\//g, '-'));
+  try { await api('/api/mkdir?path=' + enc(np), {method: 'POST'}); pickPath = np; pickLoad(); } catch (e) { fail(e); }
 };
 $('pickOk').onclick = async () => {
-  try {
-    await post('/api/move', [['path', path], ['to', pickPath], ...pickNames.map(n => ['name', n])]);
-    $('pick').style.display = 'none';
-    if (pickDone) pickDone();
-  } catch (e) { alert(e.message); }
+  try { modal('pick', false); if (pickDone) await pickDone(pickPath); } catch (e) { fail(e); }
 };
 $('mv').onclick = () => movePick([...selected, ...selDirs], () => { selected.clear(); selDirs.clear(); load(); });
 
@@ -440,7 +689,7 @@ $('mv').onclick = () => movePick([...selected, ...selDirs], () => { selected.cle
 let shareWho = null;
 $('share').onclick = async () => {
   let j;
-  try { j = await api('/api/shares'); } catch (e) { alert(e.message); return; }
+  try { j = await api('/api/shares'); } catch (e) { fail(e); return; }
   shareWho = j.others[0];
   if (!shareWho) return;
   const now = sharedWith[shareWho];
@@ -450,27 +699,52 @@ $('share').onclick = async () => {
   $('shareView').className = now === 'ver' ? 'main' : '';
   $('shareAdd').className = now === 'subir' ? 'main' : '';
   $('shareOff').hidden = !now;
-  $('shareBox').style.display = 'flex';
+  modal('shareBox', true);
 };
 async function doShare(mode) {
   try {
     if (mode) await post('/api/share', [['path', path], ['with', shareWho], ['mode', mode]]);
     else await post('/api/unshare', [['path', path], ['with', shareWho]]);
-    $('shareBox').style.display = 'none';
+    modal('shareBox', false);
     load();
-  } catch (e) { alert(e.message); }
+  } catch (e) { fail(e); }
 }
 $('shareView').onclick = () => doShare('ver');
 $('shareAdd').onclick = () => doShare('subir');
 $('shareOff').onclick = () => doShare(null);
-$('shareNo').onclick = () => { $('shareBox').style.display = 'none'; };
+$('shareNo').onclick = () => modal('shareBox', false);
+
+// ---------- enviar al Echo ----------
+async function sendEcho(names) {
+  const photos = names.filter(isImg);
+  if (!photos.length) { toast('Al Echo solo se envían fotos'); return false; }
+  const skipped = names.length - photos.length;
+  if (!confirm('¿Enviar ' + (photos.length === 1 ? 'la foto' : 'las ' + photos.length + ' fotos') + ' al Echo?\n\nSe copian a tu carpeta «Echo» y el box las añade al álbum de Amazon Photos que enseña tu Echo.'
+      + (skipped ? '\n\n' + plural(skipped, 'vídeo o archivo se queda', 'vídeos o archivos se quedan') + ' fuera.' : ''))) return false;
+  let r;
+  try { r = await post('/api/echo', [['path', path], ...photos.map(n => ['name', n])]); } catch (e) { fail(e); return false; }
+  const copied = r.copied || 0, already = r.already || 0;
+  let msg = copied + already === 0 ? 'No se ha copiado ninguna foto.'
+    : (copied ? plural(copied, 'foto copiada', 'fotos copiadas') + ' a la carpeta «Echo». ' : '') + (already ? plural(already, 'ya estaba', 'ya estaban') + ' en la carpeta.' : '');
+  if (r.connected && !r.expired && r.album) { toast('📺 ' + msg + '\nIrán al álbum «' + r.album.name + '» en un momento.'); return true; }
+  msg += '\n\n' + (!r.connected ? 'Falta conectar Súbelo con tu Amazon Photos (desde la app del móvil)'
+    : r.expired ? 'La sesión de Amazon ha caducado: vuelve a entrar desde la app del móvil' : 'Falta elegir el álbum del Echo')
+    + ' para que lleguen al Echo. Se quedan esperando en la carpeta.\n\n¿Ir a la sección Echo?';
+  if (confirm(msg)) location.hash = '#echo';
+  return true;
+}
+$('echoSel').onclick = async () => { if (await sendEcho([...selected])) { selected.clear(); selDirs.clear(); render(); } };
 
 // ---------- visor ----------
 let vi = -1;
 function openViewer(i) {
   vi = i; const f = files[i];
   if (!isImg(f.name) && !isVid(f.name)) { location.href = fileUrl(f.name, true); return; }
+  const own = access === 'own';
   $('vname').textContent = f.name + ' · ' + (i + 1) + '/' + files.length;
+  $('vinfo').textContent = fmt(f.size) + (f.mtime ? ' · ' + new Date(f.mtime).toLocaleString() : '');
+  $('vecho').hidden = !isImg(f.name);
+  $('vren').hidden = $('vmv').hidden = $('vdel').hidden = !own;
   const b = $('vbody'); b.innerHTML = '';
   const el = document.createElement(isVid(f.name) ? 'video' : 'img');
   if (isVid(f.name)) { el.controls = true; el.autoplay = true; }
@@ -486,15 +760,28 @@ function step(d) {
 }
 $('vclose').onclick = closeViewer;
 $('vdl').onclick = () => { location.href = fileUrl(files[vi].name, true); };
-$('vdel').onclick = async () => {
-  if (await removeItems([files[vi].name], 0)) { closeViewer(); load(); }
-};
+$('vecho').onclick = () => sendEcho([files[vi].name]);
+$('vdel').onclick = async () => { if (await removeItems([files[vi].name], 0)) { closeViewer(); load(); } };
 $('vmv').onclick = () => { const n = files[vi].name; movePick([n], () => { closeViewer(); load(); }); };
+$('vren').onclick = async () => {
+  const n = await renameItem(files[vi].name);
+  if (!n) return;
+  await load();
+  const i = files.findIndex(f => f.name === n);
+  if (i >= 0) openViewer(i); else closeViewer();
+};
 $('prev').onclick = () => step(-1);
 $('next').onclick = () => step(1);
+let touchX = null;
+$('viewer').addEventListener('touchstart', e => { touchX = e.touches[0].clientX; }, {passive: true});
+$('viewer').addEventListener('touchend', e => {
+  if (touchX === null) return;
+  const dx = e.changedTouches[0].clientX - touchX; touchX = null;
+  if (Math.abs(dx) > 60) step(dx < 0 ? 1 : -1);
+});
 document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') { ['pick', 'shareBox', 'albumBox'].forEach(m => modal(m, false)); if (vi >= 0) closeViewer(); else if (selecting()) clearSel(); }
   if (vi < 0) return;
-  if (e.key === 'Escape') closeViewer();
   if (e.key === 'ArrowLeft') step(-1);
   if (e.key === 'ArrowRight') step(1);
 });
@@ -503,6 +790,7 @@ document.addEventListener('keydown', e => {
 const queue = []; let running = false, total = 0, doneN = 0;
 function setBar(f) { $('qbar').style.width = Math.round(Math.min(1, f) * 100) + '%'; }
 function qlog(t) { const l = $('qlog'); l.textContent = t + '\n' + l.textContent; }
+$('qx').onclick = () => { $('queue').style.display = 'none'; };
 function enqueue(list) {  // list: [{file, dir}]
   if (!list.length) return;
   queue.push(...list); total += list.length;
@@ -514,16 +802,20 @@ function put(url, file, onprog) {
     const x = new XMLHttpRequest();
     x.open('PUT', url);
     x.upload.onprogress = e => onprog(e.loaded / (e.total || 1));
-    x.onload = () => { let j = {}; try { j = JSON.parse(x.responseText); } catch (e) {} x.status < 300 ? ok(j) : ko(new Error(j.error || 'Error ' + x.status)); };
+    x.onload = () => {
+      let j = {}; try { j = JSON.parse(x.responseText); } catch (e) {}
+      if (x.status === 401) { showLogin('Tu sesión ha caducado: vuelve a escribir tu contraseña.'); ko(new Expired('Sesión caducada')); return; }
+      x.status < 300 ? ok(j) : ko(new Error(j.error || 'Error ' + x.status));
+    };
     x.onerror = () => ko(new Error('Se cortó la conexión'));
     x.send(file);
   });
 }
 async function runQueue() {
   running = true;
-  const startPath = path;
   while (queue.length) {
     const {file, dir} = queue.shift(); doneN++;
+    lastUse = Date.now(); // subiendo cuenta como usar la web
     $('qtitle').textContent = `Subiendo ${doneN} de ${total}: ${file.name}`;
     try {
       const q = 'path=' + enc(dir) + '&name=' + enc(file.name);
@@ -532,12 +824,15 @@ async function runQueue() {
       const r = await put('/api/upload?' + q + '&size=' + file.size + '&mtime=' + file.lastModified, file,
         p => setBar((doneN - 1 + p) / total));
       qlog('subida: ' + r.name);
-    } catch (e) { qlog('ERROR ' + file.name + ': ' + e.message); }
+    } catch (e) {
+      if (e instanceof Expired) { qlog('PARADO: la sesión ha caducado. Entra y vuelve a subir: lo ya subido se salta.'); queue.length = 0; break; }
+      qlog('ERROR ' + file.name + ': ' + e.message);
+    }
     setBar(doneN / total);
   }
-  $('qtitle').textContent = `Terminado: ${total} archivos`;
+  $('qtitle').textContent = `Terminado: ${plural(total, 'archivo', 'archivos')}`;
   running = false; total = 0; doneN = 0;
-  if (path === startPath) load();
+  if (section === 'fotos') load();
 }
 $('files').onchange = ev => { enqueue([...ev.target.files].map(f => ({file: f, dir: path}))); ev.target.value = ''; };
 $('folder').onchange = ev => {
@@ -549,11 +844,13 @@ $('folder').onchange = ev => {
 };
 // arrastrar y soltar (también carpetas)
 let dragN = 0;
-document.addEventListener('dragenter', e => { e.preventDefault(); dragN++; $('drop').style.display = 'flex'; });
+const canDrop = () => user && section === 'fotos' && canAdd() && access !== 'virtual';
+document.addEventListener('dragenter', e => { e.preventDefault(); if (!canDrop()) return; dragN++; $('drop').style.display = 'flex'; });
 document.addEventListener('dragleave', e => { if (--dragN <= 0) { dragN = 0; $('drop').style.display = 'none'; } });
 document.addEventListener('dragover', e => e.preventDefault());
 document.addEventListener('drop', async e => {
   e.preventDefault(); dragN = 0; $('drop').style.display = 'none';
+  if (!canDrop()) return;
   const base = path, out = [];
   const walk = (entry, dir) => new Promise(res => {
     if (entry.isFile) entry.file(f => { if (!f.name.startsWith('.')) out.push({file: f, dir}); res(); }, () => res());
@@ -571,17 +868,146 @@ document.addEventListener('drop', async e => {
   else out.push(...[...e.dataTransfer.files].map(f => ({file: f, dir: base})));
   enqueue(out);
 });
-load();
 
+// ---------- repasos periódicos (solo con la sección a la vista) ----------
+let pollT = 0;
+function stopPolls() { clearTimeout(pollT); pollT = 0; }
+function pollAgain(fn, ms) { clearTimeout(pollT); pollT = setTimeout(() => { if (!document.hidden) fn(); else pollAgain(fn, ms); }, ms); }
+
+// ---------- echo ----------
+let echo = null;
+async function echoLoad() {
+  try { echo = await api('/api/amazon'); } catch (e) { if (!(e instanceof Expired)) { $('echoState').textContent = '✖ ' + e.message; } return; }
+  if (section !== 'echo') return;
+  const o = echo, connected = !!o.connected, expired = !!o.expired, album = o.album;
+  $('echoState').textContent = !connected ? 'Súbelo aún no está conectado con tu Amazon Photos.\nPara conectarlo, en la app del móvil: «📺 Fotos al Echo» › «Entrar en Amazon Photos».'
+    : expired ? '⚠ La sesión de Amazon ha caducado. Vuelve a entrar desde la app del móvil («📺 Fotos al Echo» › «Volver a entrar»).'
+    : !album ? '✔ Conectado con Amazon Photos. Falta elegir el álbum que enseña tu Echo.'
+    : o.running ? '↻ Enviando fotos al álbum…' : '✔ Funcionando';
+  const lines = [];
+  if (album) {
+    lines.push('Álbum: ' + album.name, 'Carpeta: DISCO:/' + user + '/' + (o.folder || 'Echo'));
+    const total = o.total, inA = o.inAlbum || 0, pending = o.pending || 0;
+    lines.push(plural(inA, 'foto', 'fotos') + ' en el álbum' + (pending ? ' · ' + pending + ' por enviar' : '')
+      + (total >= 0 && total > inA + pending ? ' · ' + (total - inA - pending) + ' sin enviar' : ''));
+    if (o.lastOk) lines.push('Último repaso: ' + new Date(o.lastOk).toLocaleString());
+  }
+  $('echoInfo').textContent = lines.join('\n');
+  $('echoErr').textContent = o.error && !expired ? '✖ ' + o.error : ''; $('echoErr').hidden = !(o.error && !expired);
+  $('echoSync').hidden = !(connected && !expired && album);
+  $('echoAlbum').hidden = !(connected && !expired);
+  $('echoAlbum').textContent = album ? 'Cambiar de álbum' : 'Elegir el álbum del Echo';
+  $('echoOff').hidden = !connected;
+  pollAgain(echoLoad, o.running ? 2500 : 6000);
+}
+$('echoSync').onclick = async () => { try { await post('/api/amazon/sync', []); toast('↻ Repasando la carpeta Echo…'); echoLoad(); } catch (e) { fail(e); } };
+$('echoOpen').onclick = () => go('Echo');
+$('echoOff').onclick = async () => {
+  if (!confirm('¿Desconectar Amazon Photos? El box olvida tu sesión de Amazon y deja de enviar fotos. Lo que ya está en el álbum se queda.')) return;
+  try { await post('/api/amazon/disconnect', []); echoLoad(); } catch (e) { fail(e); }
+};
+$('echoAlbum').onclick = async () => {
+  $('albumList').innerHTML = ''; $('albumSub').textContent = 'Buscando tus álbumes…'; $('albumLink').value = '';
+  modal('albumBox', true);
+  try {
+    const j = await api('/api/amazon/albums');
+    const list = j.albums || [];
+    $('albumSub').textContent = list.length ? 'Toca el que enseña tu Echo' : 'No encuentro álbumes: pega su enlace abajo';
+    list.forEach(a => {
+      const d = document.createElement('div');
+      d.textContent = '▸ ' + a.name + (a.count >= 0 ? '  (' + a.count + ')' : '');
+      d.onclick = async () => {
+        try { await post('/api/amazon/album', [['id', a.id], ['title', a.name]]); modal('albumBox', false); toast('📺 Álbum: ' + a.name); echoLoad(); }
+        catch (e) { fail(e); }
+      };
+      $('albumList').appendChild(d);
+    });
+  } catch (e) { if (!(e instanceof Expired)) $('albumSub').textContent = '✖ ' + e.message + ' · pega el enlace del álbum abajo'; }
+};
+$('albumLinkOk').onclick = async () => {
+  const link = $('albumLink').value.trim();
+  if (!link) return;
+  try { await post('/api/amazon/album', [['link', link]]); modal('albumBox', false); echoLoad(); } catch (e) { fail(e); }
+};
+$('albumNo').onclick = () => modal('albumBox', false);
+
+// ---------- google fotos ----------
+let g = null, gAuthUrl = null;
+function gJob() { return g && g.job; }
+async function gLoad() {
+  try { g = await api('/api/google'); } catch (e) { if (!(e instanceof Expired)) { $('gMain').hidden = false; $('gState').textContent = '✖ ' + e.message; } return; }
+  if (section !== 'google') return;
+  const configured = !!g.configured, j = g.job, state = j ? j.state : '';
+  const active = state === 'picking' || state === 'downloading', waiting = !!gAuthUrl && !active;
+  $('gSetup').hidden = configured; $('gMain').hidden = !configured; $('gReset').hidden = !configured;
+  $('gPaste').hidden = !waiting;
+  const where = j ? 'DISCO:/' + user + '/' + j.dest : '';
+  let err = null;
+  if (waiting) $('gState').textContent = 'Esperando a que des permiso en Google…';
+  else if (state === 'picking') $('gState').textContent = 'Elige las fotos en Google Fotos y pulsa «Hecho».\nIrán a ' + where;
+  else if (state === 'downloading') $('gState').textContent = 'Copiando ' + j.done + ' de ' + j.total + '…' + (j.current ? '\n' + j.current : '') + '\nA ' + where;
+  else if (j) {
+    $('gState').textContent = (state === 'done' ? '✔ Listo.' : state === 'cancelled' ? 'Parado: lo ya copiado se queda.' : '✖ No se ha terminado.')
+      + '\n' + plural(j.copied, 'copiada', 'copiadas') + (j.already ? ' · ' + j.already + ' ya estaban' : '') + (j.failed ? ' · ' + j.failed + ' sin copiar' : '') + '\nEn ' + where;
+    err = j.error;
+  } else $('gState').textContent = 'Elige en Google Fotos las fotos que quieras traer: primero te pregunto a qué carpeta del disco van.';
+  $('gErr').textContent = err ? '✖ ' + err : ''; $('gErr').hidden = !err;
+  $('gProg').hidden = state !== 'downloading';
+  if (state === 'downloading') $('gProg').firstElementChild.style.width = Math.round(100 * j.done / Math.max(1, j.total)) + '%';
+  $('gPick').hidden = active || waiting; $('gPick').textContent = j ? 'Elegir más fotos' : 'Elegir fotos en Google Fotos';
+  $('gOpenPicker').hidden = !(state === 'picking' && j.pickerUri);
+  $('gView').hidden = !(j && !active && j.copied + j.already > 0);
+  $('gCancel').hidden = !active;
+  if (active || waiting) pollAgain(gLoad, 2000);
+}
+$('gSave').onclick = async () => {
+  let id = $('gClient').value.trim(), secret = $('gSecret').value.trim();
+  if (id.startsWith('{')) { // han pegado el JSON que descarga Google Cloud
+    try { const o = JSON.parse(id), c = o.installed || o.web || o; id = c.client_id || ''; if (!secret) secret = c.client_secret || ''; } catch (e) {}
+  }
+  try { await post('/api/google/setup', [['client', id], ['secret', secret]]); $('gClient').value = $('gSecret').value = ''; toast('✔ Llave de Google guardada en el box'); gLoad(); }
+  catch (e) { fail(e); }
+};
+$('gReset').onclick = async () => {
+  if (!confirm('¿Borrar del box la llave de Google? Para volver a traer fotos tendrás que pegar otra.')) return;
+  try { await post('/api/google/reset', []); gAuthUrl = null; gLoad(); } catch (e) { fail(e); }
+};
+$('gPick').onclick = () => {
+  choose('google', '¿Dónde guardo las fotos de Google?', '⬇ Traer aquí', 'Google', [], async to => {
+    const w = window.open('about:blank', '_blank'); // ahora, que es un clic: si no, el navegador la bloquea
+    let j;
+    try { j = await post('/api/google/auth', [['path', to]]); }
+    catch (e) { if (w) w.close(); throw e; }
+    gAuthUrl = j.authUrl; $('gAuthLink').href = gAuthUrl; $('gUrl').value = '';
+    if (w) w.location.href = gAuthUrl; else toast('El navegador ha bloqueado la pestaña: pulsa «Abrir otra vez Google».');
+    gLoad();
+  });
+};
+$('gUrlOk').onclick = async () => {
+  const url = $('gUrl').value.trim();
+  if (!url) { $('gUrl').focus(); return; }
+  try {
+    await post('/api/google/code', [['url', url]]);
+    gAuthUrl = null; toast('✔ Permiso dado. Ahora elige las fotos.'); gLoad();
+  } catch (e) { fail(e); }
+};
+$('gPasteNo').onclick = () => { gAuthUrl = null; gLoad(); };
+$('gOpenPicker').onclick = () => { const j = gJob(); if (j && j.pickerUri) window.open(j.pickerUri + '/autoclose', '_blank'); };
+$('gCancel').onclick = async () => { try { await post('/api/google/cancel', []); gLoad(); } catch (e) { fail(e); } };
+$('gView').onclick = () => { const j = gJob(); if (j) go(j.dest); };
+
+// ---------- tema ----------
 function themeLabel() { $('theme').textContent = $('theme2').textContent = document.documentElement.getAttribute('data-theme') === 'dark' ? '☀ Claro' : '☾ Oscuro'; }
 $('theme').onclick = () => {
   const t = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
   document.documentElement.setAttribute('data-theme', t);
   try { localStorage.setItem('subelo-tema', t); } catch (e) {}
   themeLabel();
+  if (section === 'mapa') route(); // el mapa también cambia
 };
 $('theme2').onclick = () => $('theme').onclick();
 themeLabel();
+start();
 </script>
 </body>
 </html>
