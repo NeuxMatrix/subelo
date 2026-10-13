@@ -23,7 +23,10 @@ final class Prefs {
     static void setLogin(Context c, String user, String token) {
         p(c).edit().putString("user", user).putString("token", token).remove("pin").apply();
     }
-    static void logout(Context c) { p(c).edit().remove("user").remove("token").apply(); }
+    static void logout(Context c) {
+        p(c).edit().remove("user").remove("token").apply();
+        AmazonSession.forgetPassword(c); // se vuelve a guardar al entrar con la contraseña
+    }
 
     /** Nuevo emparejamiento: se olvida la huella anterior. */
     static void pairNew(Context c, String name, String host, int port) {

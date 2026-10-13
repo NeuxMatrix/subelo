@@ -39,9 +39,12 @@ import java.util.concurrent.Executors;
  * Fotos al Echo: conectar Súbelo con Amazon Photos y elegir el álbum que enseña el Echo.
  *
  * Se entra en Amazon dentro de la app (su propia página, con su verificación); al terminar, la
- * sesión se pasa al box, que es quien sube la carpeta «Echo» al álbum, y se borra del móvil.
+ * sesión se pasa al box, que es quien sube la carpeta «Echo» al álbum y las copias de seguridad.
+ * Una copia se queda cifrada en el móvil (AmazonSession) para ver las copias fuera de casa.
  */
 public class AmazonActivity extends Activity {
+    /** Solo entrar en Amazon (para «☁ Copias en Amazon»): al terminar, vuelve atrás. */
+    static final String EXTRA_ONLY_LOGIN = "soloEntrar";
     /** Amazon de España; las cookies de sesión se llaman «…-acbes». */
     private static final String TLD = "es";
     private static final String HOME = "https://www.amazon." + TLD;
@@ -134,14 +137,21 @@ public class AmazonActivity extends Activity {
 
         TextView note = Brutal.mono(this, 11, Brutal.INK);
         note.setText("AMAZON NO TIENE UNA FORMA OFICIAL DE HACER ESTO: SÚBELO USA LA MISMA CONEXIÓN QUE SU WEB, "
-                + "ASÍ QUE PUEDE DEJAR DE IR SI AMAZON LA CAMBIA. TU SESIÓN DE AMAZON SE GUARDA SOLO DENTRO DEL BOX "
-                + "(NO EN EL DISCO) Y SE BORRA AL PULSAR «DESCONECTAR».");
+                + "ASÍ QUE PUEDE DEJAR DE IR SI AMAZON LA CAMBIA. TU SESIÓN DE AMAZON SE GUARDA DENTRO DEL BOX "
+                + "(NO EN EL DISCO) Y, CIFRADA, EN ESTE MÓVIL PARA VER TUS COPIAS FUERA DE CASA. "
+                + "SE BORRA DE LOS DOS AL PULSAR «DESCONECTAR».");
         note.setPadding(dp(2), dp(10), 0, 0);
         col.addView(note);
 
         root.addView(panel, new FrameLayout.LayoutParams(-1, -1));
+        if (getIntent().getBooleanExtra(EXTRA_ONLY_LOGIN, false)) {
+            title.setText("Entrar en Amazon");
+            intro.setText("Entra con tu cuenta de Amazon para ver tus copias de seguridad desde el móvil.");
+            card.setVisibility(View.GONE);
+        }
         setContentView(root);
         show(null);
+        if (getIntent().getBooleanExtra(EXTRA_ONLY_LOGIN, false)) startLogin();
     }
 
     @Override
@@ -176,7 +186,7 @@ public class AmazonActivity extends Activity {
     // ---------- estado ----------
 
     private void refresh() {
-        if (web != null || sending) return;
+        if (web != null || sending || getIntent().getBooleanExtra(EXTRA_ONLY_LOGIN, false)) return;
         bg.execute(new Runnable() {
             @Override
             public void run() {
@@ -283,14 +293,15 @@ public class AmazonActivity extends Activity {
 
     private void confirmDisconnect() {
         new AlertDialog.Builder(this)
-                .setMessage("¿Desconectar Amazon Photos? El box olvida tu sesión de Amazon y deja de enviar fotos. "
-                        + "Lo que ya está en el álbum se queda.")
+                .setMessage("¿Desconectar Amazon Photos? El box y este móvil olvidan tu sesión de Amazon: se dejan de "
+                        + "enviar fotos al Echo y de hacer las copias de seguridad. Lo que ya está en Amazon se queda.")
                 .setPositiveButton("Desconectar", new DialogInterface.OnClickListener() {
                     @Override
                     public void onClick(DialogInterface d, int w) {
                         act(new Call() {
                             @Override
                             public JSONObject run(BoxClient bc) throws IOException {
+                                AmazonSession.clear(AmazonActivity.this);
                                 return bc.amazonDisconnect();
                             }
                         });
@@ -353,8 +364,10 @@ public class AmazonActivity extends Activity {
         String ck = CookieManager.getInstance().getCookie(HOME);
         if (ck == null || !ck.contains("at-acb" + TLD + "=")) return;
         final String cookie = ck;
+        AmazonSession.save(this, cookie, TLD);
         sending = true;
         closeWeb();
+        final boolean onlyLogin = getIntent().getBooleanExtra(EXTRA_ONLY_LOGIN, false);
         stateText.setText("Conectando el box con Amazon…");
         bg.execute(new Runnable() {
             @Override
@@ -373,6 +386,13 @@ public class AmazonActivity extends Activity {
                     public void run() {
                         sending = false;
                         forgetSession();
+                        if (onlyLogin) {
+                            // fuera de casa el box no contesta: para ver las copias basta con el móvil
+                            Toast.makeText(AmazonActivity.this, "Dentro de Amazon", Toast.LENGTH_SHORT).show();
+                            setResult(RESULT_OK);
+                            finish();
+                            return;
+                        }
                         if (error != null) {
                             alert("✖ No se pudo conectar: " + error);
                             refresh();
@@ -403,6 +423,7 @@ public class AmazonActivity extends Activity {
         web = null;
         panel.setVisibility(View.VISIBLE);
         if (!sending) forgetSession();
+        if (!sending && getIntent().getBooleanExtra(EXTRA_ONLY_LOGIN, false)) finish(); // ha cerrado sin entrar
     }
 
     // ---------- álbum ----------

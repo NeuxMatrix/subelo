@@ -88,6 +88,8 @@ final class BoxClient {
         String owner;
         /** Con quién compartes esta carpeta: usuario → «ver» / «subir». */
         final java.util.Map<String, String> sharedWith = new java.util.LinkedHashMap<String, String>();
+        /** Copia en Amazon: «on» (esta carpeta), «inside» (va con una que la contiene) o null. */
+        String backup;
 
         boolean own() {
             return "own".equals(access);
@@ -292,6 +294,7 @@ final class BoxClient {
         if (a != null) for (int i = 0; i < a.length(); i++) l.folders.add(a.optString(i));
         l.access = o.optString("access", "own");
         l.owner = o.optString("owner", null);
+        l.backup = o.optString("backup", null);
         JSONObject sw = o.optJSONObject("sharedWith");
         if (sw != null) {
             for (java.util.Iterator<String> it = sw.keys(); it.hasNext(); ) {
@@ -502,6 +505,24 @@ final class BoxClient {
 
     JSONObject amazonDisconnect() throws IOException {
         return form("/api/amazon/disconnect", new ArrayList<String[]>());
+    }
+
+    // ---------- copia de seguridad en Amazon Fotos ----------
+
+    JSONObject backup() throws IOException {
+        return newFeature("/api/backup");
+    }
+
+    JSONObject backupAdd(String path) throws IOException {
+        List<String[]> f = new ArrayList<String[]>();
+        f.add(new String[]{"path", path});
+        return form("/api/backup/add", f);
+    }
+
+    JSONObject backupRemove(String path) throws IOException {
+        List<String[]> f = new ArrayList<String[]>();
+        f.add(new String[]{"path", path});
+        return form("/api/backup/remove", f);
     }
 
     /** Copia fotos de una carpeta a la carpeta «Echo» (el box las añade al álbum). */

@@ -161,8 +161,8 @@
   .modal .list .up { background: var(--lilac); }
   .modal .row { display: flex; gap: 10px; flex-wrap: wrap; padding: 14px 16px 16px; }
   .modal .pad { padding: 0 16px; }
-  #shareBox .box { padding: 16px; gap: 12px; }
-  #shareBox h3 { padding: 0 0 4px; }
+  #shareBox .box, #backupBox .box { padding: 16px; gap: 12px; }
+  #shareBox h3, #backupBox h3 { padding: 0 0 4px; }
   #toast { position: fixed; left: 16px; bottom: 16px; z-index: 50; background: var(--black); color: var(--paper); border: 3px solid var(--paper); box-shadow: 6px 6px 0 var(--orange); padding: 12px 14px; max-width: min(460px, calc(100vw - 32px)); display: none; white-space: pre-line; }
 
   /* entrar */
@@ -226,6 +226,7 @@
       <button id="selAll">☑ Elegir todo</button>
       <button id="dlAll">⬇ Carpeta .zip</button>
       <button id="share" class="alt" hidden>👥 Compartir</button>
+      <button id="backup" class="alt" hidden>☁ Backup en Amazon</button>
     </div>
     <div class="bar viewbar" id="viewbar">
       <input type="search" id="q" placeholder="🔍 Buscar por nombre" autocomplete="off">
@@ -443,6 +444,14 @@
   <button id="shareNo">Cancelar</button>
 </div></div>
 
+<div id="backupBox" class="modal"><div class="box">
+  <h3 id="backupTitle"></h3>
+  <p id="backupText" style="margin:0;line-height:1.4"></p>
+  <button id="backupOn" class="main">☁ Hacer backup en Amazon</button>
+  <button id="backupOff" class="danger">✕ Dejar de hacer copia</button>
+  <button id="backupNo">Cerrar</button>
+</div></div>
+
 <div id="pick" class="modal"><div class="box">
   <h3 id="pickTitle">Mover a…</h3>
   <div id="pickPath" class="sub mono"></div>
@@ -484,7 +493,7 @@ const view = {kind: '', sort: 'name', size: 'm', fit: false};
 try { Object.assign(view, JSON.parse(localStorage.getItem('subelo-vista') || '{}')); } catch (e) {}
 function saveView() { try { localStorage.setItem('subelo-vista', JSON.stringify(view)); } catch (e) {} }
 const selected = new Set(), selDirs = new Set();
-let access = 'own', owner = null, sharedWith = {};
+let access = 'own', owner = null, sharedWith = {}, backupMode = null;
 
 // ---------- utilidades ----------
 class Expired extends Error {}
@@ -629,7 +638,7 @@ async function load() {
     const j = await api('/api/list?path=' + enc(path));
     if (n !== loadN) return;
     allFiles = j.files; allFolders = j.folders;
-    access = j.access || 'own'; owner = j.owner || null; sharedWith = j.sharedWith || {};
+    access = j.access || 'own'; owner = j.owner || null; sharedWith = j.sharedWith || {}; backupMode = j.backup || null;
     applyAccess(); crumbs(); render();
     covers(n);
   } catch (e) {
@@ -671,12 +680,16 @@ function applyAccess() {
   $('upFiles').hidden = $('upFolder').hidden = $('mk').hidden = !canAdd();
   $('dlAll').hidden = $('selAll').hidden = $('viewbar').hidden = access === 'virtual';
   $('share').hidden = !own || !path;
+  $('backup').hidden = !own || !path;
+  $('backup').textContent = backupMode ? '☁✓ Con copia en Amazon' : '☁ Backup en Amazon';
   const who = Object.keys(sharedWith);
   const note = access === 'virtual' ? '👥 Lo que te han compartido'
     : access === 'fav' ? '⭐ Aquí no hay copias: cada foto sigue en su carpeta. Quitarla de favoritos no la borra.'
     : !own ? 'De ' + owner + (access === 'subir' ? ' · puedes ver y añadir fotos' : ' · solo ver') + ' · borrar, mover y renombrar solo ' + owner
     : who.length ? '👥 Compartida con ' + who.map(w => w + (sharedWith[w] === 'subir' ? ' (ver y añadir)' : ' (ver)')).join(', ') : '';
-  $('accessNote').textContent = note; $('accessNote').hidden = !note;
+  const bnote = own && backupMode ? '☁ Con copia en Amazon' : '';
+  const full = [note, bnote].filter(Boolean).join(' · ');
+  $('accessNote').textContent = full; $('accessNote').hidden = !full;
 }
 function selecting() { return selected.size + selDirs.size > 0; }
 // filtro (nombre, fotos o vídeos, favoritos) y orden de lo que hay en la carpeta
@@ -901,6 +914,43 @@ $('shareAdd').onclick = () => doShare('subir');
 $('shareOff').onclick = () => doShare(null);
 $('shareNo').onclick = () => modal('shareBox', false);
 
+// ---------- copia en Amazon Fotos ----------
+$('backup').onclick = async () => {
+  let j;
+  try { j = await api('/api/backup'); } catch (e) { fail(e); return; }
+  const name = path.split('/').pop();
+  $('backupTitle').textContent = '☁ «' + name + '» en Amazon Fotos';
+  let txt, on = false, off = false;
+  const f = (j.folders || []).find(x => path === x.path || path.startsWith(x.path + '/'));
+  const prog = f && f.files !== undefined ? (f.missing ? 'La carpeta ya no está en el disco.' : f.done + ' de ' + f.files + ' archivos ya en Amazon' + (f.path !== path ? ' (con la carpeta «' + f.path + '»)' : '') + '.') : f ? 'Preparando la copia…' : '';
+  const err = j.error ? '\n✖ ' + j.error : '';
+  if (!j.connected || j.expired) {
+    txt = (j.expired ? 'La sesión de Amazon ha caducado.' : 'Súbelo aún no está conectado con tu Amazon.') + ' Entra en Amazon desde la app del móvil (☁ en la carpeta, o «📺 Fotos al Echo») y vuelve aquí.';
+  } else if (!backupMode) {
+    txt = 'Se sube una copia de esta carpeta, con todo lo que tenga dentro, a «Súbelo Backup» de tu Amazon Fotos. Lo que añadas después también se copia. No va a ningún álbum, así que no sale en el Echo. Si se rompe el disco, ahí lo tienes; y fuera de casa lo ves en la app, en «☁ Copias en Amazon».';
+    on = true;
+  } else if (backupMode === 'inside') {
+    txt = '✓ Ya tiene copia en Amazon: está dentro de otra carpeta que la tiene. ' + prog + err;
+  } else {
+    txt = '✓ Esta carpeta tiene copia en Amazon, con todo lo que tiene dentro. ' + prog + (j.running ? ' ↻ Subiendo ahora…' : '') + err;
+    off = true;
+  }
+  $('backupText').textContent = txt; $('backupText').style.whiteSpace = 'pre-line';
+  $('backupOn').hidden = !on; $('backupOff').hidden = !off;
+  modal('backupBox', true);
+};
+async function doBackup(add) {
+  try {
+    await post(add ? '/api/backup/add' : '/api/backup/remove', [['path', path]]);
+    modal('backupBox', false);
+    toast(add ? '☁ Copiando a Amazon' : 'Ya no se copia. Lo que ya está en Amazon se queda.');
+    load();
+  } catch (e) { fail(e); }
+}
+$('backupOn').onclick = () => doBackup(true);
+$('backupOff').onclick = () => doBackup(false);
+$('backupNo').onclick = () => modal('backupBox', false);
+
 // ---------- enviar al Echo ----------
 async function sendEcho(names) {
   const photos = names.filter(isImg);
@@ -1117,7 +1167,7 @@ $('viewer').addEventListener('touchend', e => {
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     if (geoJob) { geoClose(); return; }
-    ['pick', 'shareBox', 'albumBox'].forEach(m => modal(m, false)); if (vi >= 0) closeViewer(); else if (selecting()) clearSel();
+    ['pick', 'shareBox', 'backupBox', 'albumBox'].forEach(m => modal(m, false)); if (vi >= 0) closeViewer(); else if (selecting()) clearSel();
   }
   if (vi < 0 || geoJob) return;
   if (e.key === 'ArrowLeft') step(-1);

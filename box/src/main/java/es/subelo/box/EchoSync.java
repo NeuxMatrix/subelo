@@ -119,6 +119,7 @@ final class EchoSync {
         save(c, user, p);
         status(user).lastError = null;
         kick(c, user);
+        Backup.kick(c, user); // las copias que esperaban a que se volviera a entrar
     }
 
     static void disconnect(Context c, String user) {
@@ -199,6 +200,11 @@ final class EchoSync {
             }
             return s;
         }
+    }
+
+    /** La sesión de Amazon ya no vale (lo usa también la copia de seguridad). */
+    static void markExpired(Context c, String user, String msg) {
+        expired(c, user, msg);
     }
 
     private static void expired(Context c, String user, String msg) {

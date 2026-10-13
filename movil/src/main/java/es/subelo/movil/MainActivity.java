@@ -226,8 +226,14 @@ public class MainActivity extends Activity {
                 openBox(AmazonActivity.class);
             }
         }), Brutal.full(this));
+        main.addView(Brutal.button(this, "☁ Copias en Amazon", Brutal.PAPER, Brutal.BLACK, new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                startActivity(new Intent(MainActivity.this, BackupActivity.class)); // también fuera de casa
+            }
+        }), Brutal.full(this));
         TextView sub = Brutal.mono(this, 11, Brutal.PAPER);
-        sub.setText("VER · SUBIR A UNA CARPETA · DESCARGAR · DÓNDE SE HICIERON · TU ÁLBUM DEL ECHO");
+        sub.setText("VER · SUBIR A UNA CARPETA · DESCARGAR · DÓNDE SE HICIERON · TU ÁLBUM DEL ECHO · TUS COPIAS EN AMAZON, TAMBIÉN FUERA DE CASA");
         sub.setPadding(dp(2), dp(4), 0, 0);
         main.addView(sub);
         col.addView(main, col.indexOfChild(box), Brutal.cardParams(this)); // lo primero, lo que más se usa
@@ -597,6 +603,7 @@ public class MainActivity extends Activity {
             }
         });
         Prefs.logout(this);
+        AmazonSession.clear(this); // la sesión de Amazon de este usuario no se queda para el siguiente
         goLogin(null);
     }
 

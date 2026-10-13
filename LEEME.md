@@ -14,6 +14,12 @@ No hace falta root ni Internet: todo va por tu red local.
 
 ## Novedades: álbumes, carpetas con portada y mapa
 
+- **Copia de seguridad en Amazon Fotos («☁»).**
+  - **Hacer backup de una carpeta**: en «Mis fotos por carpetas» (móvil) o «Mis fotos» (web), entra en la carpeta y pulsa «☁» › «Hacer backup en Amazon». El box sube la carpeta entera, con sus subcarpetas, a «Súbelo Backup/Fer/…» (o «…/Julss/…») de tu Amazon Fotos, y lo que añadas después también. Repasa cada 30 minutos y poco después de cada subida.
+  - **No sale en el Echo ni en ningún aparato de Amazon**: las copias nunca se meten en un álbum.
+  - **Es una copia, no un espejo**: si borras algo del disco, en Amazon se queda. Si cambias una foto, se sube otra vez con otro nombre.
+  - **Fuera de casa**: en el móvil, «☁ Copias en Amazon» pide tu contraseña de Súbelo y enseña tus carpetas con copia directamente desde Amazon, sin el box. La primera vez hay que abrirlo en casa (para comprobar la contraseña) y entrar en Amazon desde ahí; la sesión de Amazon se guarda cifrada en el móvil y se borra al cerrar la sesión de Súbelo o al pulsar «Desconectar».
+  - Usa la misma conexión con Amazon que «📺 Fotos al Echo» (sin API oficial de Amazon: puede dejar de ir si Amazon cambia su web). Con Prime, las fotos no gastan espacio; los vídeos y otros archivos sí (5 GB).
 - **2.18: mapa común entre Fer y Julss, y ubicar carpetas enteras.**
   - **¿Solo yo o con Julss?** Al ubicar fotos o carpetas con «📍» (web y móvil), en vez de «Guardar aquí» salen dos botones: «✓ Solo yo» (solo sale en tu mapa) y «✓ Con Julss» (sale también en el mapa de Julss). Para Julss igual, con «✓ Con Fer». El otro solo puede verlas desde su mapa: no puede borrarlas, moverlas ni cambiarlas de sitio, ni ver el resto de la carpeta.
   - **Ubicar una carpeta entera**: elige la carpeta (o varias) y pulsa «📍». Las fotos de dentro, también las de sus subcarpetas, que no tienen GPS van a ese sitio; las que lo tienen se quedan donde se hicieron. Si la carpeta es «con Julss», todo lo de dentro sale en los dos mapas.
@@ -177,7 +183,7 @@ Conviene reservar en el router la IP del box (DHCP estática) para que la direcc
 
 ## 7. ¿Y fuera de casa?
 
-Tal como está, solo funciona con el móvil u ordenador conectados a la red de casa (es lo más seguro). Si quieres acceder desde fuera, la forma sencilla y segura es instalar **Tailscale** (gratis) en el box, el móvil y el ordenador: en la app Súbelo pulsa «Poner IP a mano» y escribe la IP de Tailscale del box (100.x.x.x); en el ordenador usa `https://100.x.x.x:8765`. Nunca abras el puerto en el router.
+Tal como está, solo funciona con el móvil u ordenador conectados a la red de casa (es lo más seguro). Lo que tenga copia en Amazon («☁») sí se puede ver fuera de casa desde el móvil, en «☁ Copias en Amazon». Si quieres acceder desde fuera, la forma sencilla y segura es instalar **Tailscale** (gratis) en el box, el móvil y el ordenador: en la app Súbelo pulsa «Poner IP a mano» y escribe la IP de Tailscale del box (100.x.x.x); en el ordenador usa `https://100.x.x.x:8765`. Nunca abras el puerto en el router.
 
 ---
 

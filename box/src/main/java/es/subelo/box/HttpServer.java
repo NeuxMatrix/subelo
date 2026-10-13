@@ -73,6 +73,10 @@ import javax.net.ssl.SSLSocketFactory;
  * GET  /api/amazon/albums    álbumes de Amazon Photos
  * POST /api/amazon/album     id=&title= o link=: el álbum del Echo
  * POST /api/amazon/sync      repasar ya;  POST /api/amazon/disconnect: olvidar la sesión de Amazon
+ * GET  /api/backup           copia en Amazon Fotos (Backup): carpetas marcadas y cuánto llevan subido
+ * POST /api/backup/add       path=: hacer backup de esa carpeta (con sus subcarpetas) en Amazon
+ * POST /api/backup/remove    path=: dejar de hacerlo (lo que ya está en Amazon se queda)
+ * POST /api/backup/sync      repasar ya
  * GET  /api/google           traer de Google Fotos (GoogleImport): ¿configurado?, clientId y la importación en curso
  * POST /api/google/setup     client=&secret=: el cliente OAuth de Google Cloud;  POST /api/google/reset: olvidarlo
  * POST /api/google/start     code=&verifier=&redirect=&path=: canjea el permiso y abre el selector de Google Fotos
@@ -113,6 +117,7 @@ final class HttpServer {
         if (running) return;
         Users.forgetOldWebSessions(ctx);
         EchoSync.start(ctx);
+        Backup.start(ctx);
         SSLContext tls = Tls.context(ctx.getFilesDir());
         try {
             wrapTls = SSLSocketFactory.class.getMethod("createSocket", Socket.class, InputStream.class, boolean.class);
@@ -474,6 +479,10 @@ final class HttpServer {
             error(out, 404, "Esa carpeta ya no está compartida contigo");
             return;
         }
+        if (path.equals("/api/backup") || path.startsWith("/api/backup/")) {
+            backup(st, method, path, user, rel, acc, out);
+            return;
+        }
         if (acc.virtualRoot) {
             if (path.equals("/api/folders") || path.equals("/api/list") || path.equals("/api/albums")) {
                 virtualRoot(st, path, user, out);
@@ -534,6 +543,9 @@ final class HttpServer {
         } else if (path.equals("/api/upload") && (method.equals("PUT") || method.equals("POST"))) {
             upload(st, dirRel, params, body, contentLength, out);
             if (dirRel.equals(acc.owner + "/" + EchoSync.FOLDER)) EchoSync.kick(ctx, acc.owner);
+            if (Backup.of(ctx, acc.owner, dirRel.substring(acc.owner.length()).replaceFirst("^/", "")) != null) {
+                Backup.kick(ctx, acc.owner);
+            }
         } else if (path.equals("/api/echo")) {
             if (!method.equals("POST")) {
                 error(out, 405, "Usa POST");
@@ -677,6 +689,7 @@ final class HttpServer {
                 for (String n : names) {
                     st.delete(d, n);
                     Shares.deleted(ctx, user, rel.isEmpty() ? n : rel + "/" + n);
+                    Backup.deleted(ctx, user, rel.isEmpty() ? n : rel + "/" + n);
                     Favorites.deleted(ctx, dirRel + "/" + n);
                     Geo.deleted(ctx, dirRel + "/" + n);
                     ok++;
@@ -704,6 +717,7 @@ final class HttpServer {
                 for (String n : names) {
                     String fin = st.move(d, n, dest);
                     Shares.moved(ctx, user, rel.isEmpty() ? n : rel + "/" + n, to.isEmpty() ? fin : to + "/" + fin);
+                    Backup.moved(ctx, user, rel.isEmpty() ? n : rel + "/" + n, to.isEmpty() ? fin : to + "/" + fin);
                     Favorites.moved(ctx, dirRel + "/" + n, (to.isEmpty() ? user : user + "/" + to) + "/" + fin);
                     Geo.moved(ctx, dirRel + "/" + n, (to.isEmpty() ? user : user + "/" + to) + "/" + fin);
                     arr.put(fin);
@@ -721,6 +735,7 @@ final class HttpServer {
                     return;
                 }
                 Shares.moved(ctx, user, rel.isEmpty() ? names.get(0) : rel + "/" + names.get(0), rel.isEmpty() ? nn : rel + "/" + nn);
+                Backup.moved(ctx, user, rel.isEmpty() ? names.get(0) : rel + "/" + names.get(0), rel.isEmpty() ? nn : rel + "/" + nn);
                 Favorites.moved(ctx, dirRel + "/" + names.get(0), dirRel + "/" + nn);
                 Geo.moved(ctx, dirRel + "/" + names.get(0), dirRel + "/" + nn);
                 o.put("name", nn);
@@ -789,6 +804,54 @@ final class HttpServer {
         } catch (IOException e) {
             error(out, 502, e.getMessage() == null ? "No se pudo hablar con Amazon" : e.getMessage());
         }
+    }
+
+    // ---------- copia de seguridad en Amazon Fotos ----------
+
+    private void backup(Store st, String method, String path, String user, String rel, Shares.Access acc, OutputStream out)
+            throws IOException, JSONException {
+        if (path.equals("/api/backup")) {
+            json(out, 200, Backup.statusJson(ctx, user));
+            return;
+        }
+        if (!method.equals("POST")) {
+            error(out, 405, "Usa POST");
+            return;
+        }
+        if (path.equals("/api/backup/sync")) {
+            Backup.kick(ctx, user);
+            json(out, 200, Backup.statusJson(ctx, user));
+            return;
+        }
+        boolean add = path.equals("/api/backup/add");
+        if (!add && !path.equals("/api/backup/remove")) {
+            error(out, 404, "No encontrado");
+            return;
+        }
+        if (rel.isEmpty() || acc.virtualRoot || !acc.own || Favorites.isVirtual(rel)) {
+            error(out, 400, "Elige una carpeta tuya");
+            return;
+        }
+        if (add) {
+            if (st.dir(acc.storeRel, false) == null) {
+                error(out, 404, "La carpeta no existe");
+                return;
+            }
+            String now = Backup.of(ctx, user, rel);
+            if ("inside".equals(now)) {
+                error(out, 400, "Esta carpeta ya va en la copia: está dentro de otra que la tiene");
+                return;
+            }
+            try {
+                Backup.add(ctx, user, rel);
+            } catch (IOException e) {
+                error(out, 409, e.getMessage()); // sin Amazon conectado
+                return;
+            }
+        } else {
+            Backup.remove(ctx, user, rel);
+        }
+        json(out, 200, Backup.statusJson(ctx, user));
     }
 
     // ---------- traer de Google Fotos ----------
@@ -1235,6 +1298,8 @@ final class HttpServer {
         o.put("access", acc.own ? "own" : acc.mode);
         o.put("owner", acc.owner);
         if (acc.own && !rel.isEmpty()) o.put("sharedWith", new JSONObject(Shares.outgoing(ctx, user, rel)));
+        String bk = acc.own ? Backup.of(ctx, user, rel) : null;
+        if (bk != null) o.put("backup", bk);
     }
 
     /** La carpeta especial con lo que te han compartido. */

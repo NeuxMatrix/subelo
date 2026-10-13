@@ -33,6 +33,8 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import org.json.JSONObject;
+
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -67,7 +69,7 @@ public class ExploreActivity extends Activity {
     private String path = "";
     private BoxClient bc;
     private TextView pathText;
-    private Button downloadButton, uploadButton, folderButton, moveButton, deleteButton, renameButton, shareButton, echoButton, favButton, geoButton;
+    private Button downloadButton, uploadButton, folderButton, moveButton, deleteButton, renameButton, shareButton, backupButton, echoButton, favButton, geoButton;
     /** Las fotos a las que se está eligiendo sitio (📍), mientras está abierto el mapa. */
     /** Lo que se está ubicando (📍) mientras está abierto el mapa: archivos, y carpetas acabadas en «/». */
     private ArrayList<String> geoNames;
@@ -192,6 +194,13 @@ public class ExploreActivity extends Activity {
             }
         });
         bar.addView(shareButton, Brutal.spaced(this, dp(56), LinearLayout.LayoutParams.WRAP_CONTENT, 0));
+        backupButton = Brutal.button(this, "☁", Brutal.LILAC, Brutal.INK, new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                backupDialog();
+            }
+        });
+        bar.addView(backupButton, Brutal.spaced(this, dp(56), LinearLayout.LayoutParams.WRAP_CONTENT, 0));
         moveButton = Brutal.button(this, "↦ Mover", Brutal.PAPER, Brutal.BLACK, new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -335,6 +344,7 @@ public class ExploreActivity extends Activity {
         } else if (!current.sharedWith.isEmpty()) {
             where += "\n👥 COMPARTIDA CON " + android.text.TextUtils.join(", ", current.sharedWith.keySet());
         }
+        if (current.own() && current.backup != null) where += "\n☁ CON COPIA EN AMAZON";
         if (selecting) {
             pathText.setText(where + "\n■ " + selected.size() + " ELEGIDOS · TOCA PARA AÑADIR · ATRÁS PARA SALIR");
             int nFiles = selectedFiles().size(), nPhotos = 0;
@@ -364,6 +374,8 @@ public class ExploreActivity extends Activity {
         uploadButton.setVisibility(add ? View.VISIBLE : View.GONE);
         folderButton.setVisibility(add ? View.VISIBLE : View.GONE);
         shareButton.setVisibility(!selecting && current.own() && !path.isEmpty() ? View.VISIBLE : View.GONE);
+        backupButton.setVisibility(!selecting && current.own() && !path.isEmpty() ? View.VISIBLE : View.GONE);
+        backupButton.setText(current.backup != null ? "☁✓" : "☁");
         boolean edit = selecting && current.own();
         moveButton.setVisibility(edit ? View.VISIBLE : View.GONE);
         deleteButton.setVisibility(edit ? View.VISIBLE : View.GONE);
@@ -783,6 +795,103 @@ public class ExploreActivity extends Activity {
                 });
             }
         });
+    }
+
+    // ---------- copia en Amazon ----------
+
+    private void backupDialog() {
+        final String folder = path;
+        final String name = folder.substring(folder.lastIndexOf('/') + 1);
+        bg.execute(new Runnable() {
+            @Override
+            public void run() {
+                JSONObject st = null;
+                String err = null;
+                try {
+                    if (bc == null) bc = BoxClient.connect(ExploreActivity.this);
+                    st = bc.backup();
+                } catch (IOException e) {
+                    err = e.getMessage();
+                }
+                final JSONObject status = st;
+                final String error = err;
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (!folder.equals(path)) return;
+                        if (error != null) {
+                            Toast.makeText(ExploreActivity.this, error, Toast.LENGTH_LONG).show();
+                            return;
+                        }
+                        showBackup(folder, name, status);
+                    }
+                });
+            }
+        });
+    }
+
+    private void showBackup(final String folder, final String name, JSONObject status) {
+        String mode = current.backup;
+        AlertDialog.Builder b = new AlertDialog.Builder(this).setTitle("☁ «" + name + "» en Amazon Fotos");
+        if (!status.optBoolean("connected") || status.optBoolean("expired")) {
+            b.setMessage((status.optBoolean("expired") ? "La sesión de Amazon ha caducado." : "Súbelo aún no está conectado con tu Amazon.")
+                    + "\n\nEntra en Amazon y luego vuelve a pulsar ☁.")
+                    .setPositiveButton("Entrar en Amazon", new DialogInterface.OnClickListener() {
+                        @Override
+                        public void onClick(DialogInterface d, int w) {
+                            startActivity(new Intent(ExploreActivity.this, AmazonActivity.class)
+                                    .putExtra(AmazonActivity.EXTRA_ONLY_LOGIN, true));
+                        }
+                    })
+                    .setNegativeButton("Cancelar", null)
+                    .show();
+            return;
+        }
+        String progress = BackupActivity.describe(status, folder);
+        String err = status.isNull("error") ? null : status.optString("error", null);
+        if (mode == null) {
+            b.setMessage("Se sube una copia de esta carpeta, con todo lo que tenga dentro, a «Súbelo Backup» de tu "
+                    + "Amazon Fotos. Lo que añadas después también se copia. No se mete en ningún álbum, así que no "
+                    + "sale en el Echo.\n\nSi algún día se rompe el disco, ahí lo tienes. Y fuera de casa lo puedes ver "
+                    + "en «☁ Copias en Amazon».")
+                    .setPositiveButton("Hacer backup en Amazon", new DialogInterface.OnClickListener() {
+                        @Override
+                        public void onClick(DialogInterface d, int w) {
+                            ExploreActivity.this.run("☁ «" + name + "» se está copiando a Amazon", new Op() {
+                                @Override
+                                public void go(BoxClient c) throws IOException {
+                                    c.backupAdd(folder);
+                                }
+                            });
+                        }
+                    });
+        } else if ("inside".equals(mode)) {
+            b.setMessage("✓ Esta carpeta ya tiene copia en Amazon porque está dentro de otra que la tiene."
+                    + (progress == null ? "" : "\n\n" + progress) + (err == null ? "" : "\n\n✖ " + err));
+        } else {
+            b.setMessage("✓ Esta carpeta tiene copia en Amazon, con todo lo que tiene dentro."
+                    + (progress == null ? "" : "\n\n" + progress)
+                    + (status.optBoolean("running") ? "\n↻ Subiendo ahora…" : "")
+                    + (err == null ? "" : "\n\n✖ " + err))
+                    .setNeutralButton("Dejar de hacer copia", new DialogInterface.OnClickListener() {
+                        @Override
+                        public void onClick(DialogInterface d, int w) {
+                            ExploreActivity.this.run("Ya no se copia «" + name + "». Lo que ya está en Amazon se queda.", new Op() {
+                                @Override
+                                public void go(BoxClient c) throws IOException {
+                                    c.backupRemove(folder);
+                                }
+                            });
+                        }
+                    })
+                    .setPositiveButton("Ver en Amazon", new DialogInterface.OnClickListener() {
+                        @Override
+                        public void onClick(DialogInterface d, int w) {
+                            startActivity(new Intent(ExploreActivity.this, BackupActivity.class));
+                        }
+                    });
+        }
+        b.setNegativeButton("Cerrar", null).show();
     }
 
     // ---------- nueva carpeta ----------

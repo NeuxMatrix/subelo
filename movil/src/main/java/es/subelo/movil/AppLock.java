@@ -86,6 +86,7 @@ final class AppLock {
     /** Tras entrar en el box con la contraseña: si el bloqueo está activado, se queda con la nueva. */
     static void loggedIn(Context c, String password) {
         if (p(c).getBoolean("on", false)) setPassword(c, password);
+        AmazonSession.rememberPassword(c, password); // para «☁ Copias en Amazon» fuera de casa
         unlocked = true;
     }
 
