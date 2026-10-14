@@ -185,6 +185,18 @@ public class MapActivity extends Activity {
             });
         }
 
+        /** Al tocar un punto del mapa: abre su carpeta en «Mis fotos por carpetas». */
+        @JavascriptInterface
+        public void carpeta(final String path) {
+            if (path == null) return;
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    startActivity(new Intent(MapActivity.this, ExploreActivity.class).putExtra("path", path));
+                }
+            });
+        }
+
         /** Abre el visor del móvil con las fotos [[carpeta, nombre, tamaño], …] empezando en la elegida. */
         @JavascriptInterface
         public void ver(String json, final int index) {

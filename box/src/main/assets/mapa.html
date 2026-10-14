@@ -40,8 +40,7 @@
   #years button { background: var(--surface); color: var(--ink); border: 3px solid var(--ink); box-shadow: 3px 3px 0 var(--ink); flex: none; }
   #years button.on { background: var(--purple); color: #fff; }
   #years .sep { flex: none; width: 3px; background: var(--ink); margin: 0 4px; }
-  .ph.otro { border-color: var(--orange); box-shadow: 4px 4px 0 var(--orange); }
-  .ph .con { position: absolute; left: -3px; top: -3px; background: var(--lilac); color: var(--ink); border: 3px solid var(--ink); font: 700 10px "Space Mono", monospace; padding: 0 3px; }
+  #years .k { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; border: 2px solid var(--ink); vertical-align: -1px; }
   #map { flex: 1; min-height: 0; background: var(--cream); }
   .leaflet-container { font-family: "Space Grotesk", system-ui, sans-serif; background: var(--cream); }
   .leaflet-bar a { background: var(--surface); color: var(--ink); border-bottom-color: var(--ink); font-family: "Archivo Black", sans-serif; }
@@ -49,10 +48,32 @@
   .leaflet-touch .leaflet-bar a:first-child, .leaflet-touch .leaflet-bar a:last-child { border-radius: 0; }
   .leaflet-control-attribution { font-size: 10px; }
   html[data-theme=dark] .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.85) contrast(.9) saturate(.6); }
-  .ph { width: 100%; height: 100%; background: var(--surface); border: 3px solid var(--ink); box-shadow: 4px 4px 0 var(--ink); overflow: hidden; position: relative; }
-  .ph img { width: 100%; height: 100%; object-fit: cover; display: block; }
-  .ph .n { position: absolute; right: -3px; top: -3px; background: var(--orange); color: #111; border: 3px solid var(--ink); font: 700 12px "Space Mono", monospace; padding: 1px 5px; min-width: 24px; text-align: center; }
-  .ph.vid::after { content: "▶"; position: absolute; left: 3px; bottom: 2px; color: #fff; text-shadow: 0 0 3px #000; font-size: 12px; }
+  /* un punto redondo por sitio con fotos (el número: cuántas); morado lo tuyo, naranja lo del otro */
+  .hit { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+  .dot { border-radius: 50%; background: var(--purple); color: #fff; border: 3px solid #fff; box-shadow: 0 0 0 2px #111, 2px 3px 0 2px #111;
+    display: flex; align-items: center; justify-content: center; font: 700 11px/1 "Space Mono", monospace; transition: transform .12s; }
+  .dot.otro { background: var(--orange); color: #111; }
+  .dot.mix { box-shadow: 0 0 0 4px var(--orange), 2px 3px 0 4px #111; }
+  .hit:hover .dot, .hit:focus-visible .dot { transform: scale(1.18); }
+  .leaflet-tooltip.tip { background: var(--black); color: var(--paper); border: 2px solid var(--paper); border-radius: 0; box-shadow: none; font: 700 .72rem "Space Mono", monospace; padding: 4px 8px; }
+  .leaflet-tooltip.tip::before { display: none; }
+  /* al tocar un punto con fotos de varias carpetas: cuáles son */
+  #sheet { display: none; position: absolute; left: 12px; bottom: 12px; z-index: 700; width: min(440px, calc(100% - 24px)); max-height: 60%; flex-direction: column;
+    background: var(--surface); border: 3px solid var(--ink); box-shadow: 8px 8px 0 var(--purple); }
+  #sheet .head { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-bottom: 3px solid var(--ink); }
+  #sheet .head span { flex: 1; font-size: .78rem; }
+  #sheet .head button { border-color: var(--ink); background: var(--surface); color: var(--ink); box-shadow: 3px 3px 0 var(--ink); }
+  #shList { overflow: auto; }
+  #shList .row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-bottom: 2px solid var(--ink); cursor: pointer; }
+  #shList .row:last-child { border-bottom: 0; }
+  #shList .row:hover { background: var(--lilac); }
+  #shList .k { width: 14px; height: 14px; border-radius: 50%; flex: none; border: 2px solid var(--ink); }
+  #shList .t { flex: 1; min-width: 0; }
+  #shList .t b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #shList .t small { display: block; font: 700 .68rem "Space Mono", monospace; opacity: .75; }
+  #shList .row button { flex: none; border-color: var(--ink); background: var(--surface); color: var(--ink); box-shadow: 3px 3px 0 var(--ink); padding: 5px 8px; }
+  #shList .row button.main { color: #111; }
+  @media (max-width: 600px) { #sheet { left: 0; right: 0; bottom: 0; width: 100%; max-height: 70%; box-shadow: 0 -6px 0 var(--purple); border-width: 3px 0 0; } }
   #msg { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 500; width: min(420px, calc(100vw - 32px)); background: var(--surface); border: 3px solid var(--ink); box-shadow: 8px 8px 0 var(--purple); padding: 18px 18px 16px; display: none; }
   #msg h2 { font-family: "Archivo Black", sans-serif; text-transform: uppercase; margin: 0 0 8px; font-size: 1.3rem; }
   #msg p { margin: 0; line-height: 1.4; }
@@ -94,6 +115,7 @@
   <div id="map"></div>
   <div id="found"></div>
   <div id="msg"><h2 id="msgT"></h2><p id="msgP"></p></div>
+  <div id="sheet"><div class="head mono"><span id="shT"></span><button id="shX" class="mono" title="Cerrar">✕</button></div><div id="shList"></div></div>
 </div>
 <div id="pickBar"><span class="hint mono" id="pickHint">Toca en el mapa donde se hizo</span><button id="pickClear" class="mono" hidden>↺ Quitar la puesta a mano</button><button id="pickNo" class="mono">Cancelar</button><button id="pickOk" class="mono main" disabled>✓ Guardar aquí</button><button id="pickCon" class="mono main" disabled hidden></button></div>
 <div id="viewer">
@@ -121,6 +143,11 @@ function tell(msg) {
   } else if (EMBED && parent !== window) parent.postMessage(msg, location.origin);
 }
 
+// Al tocar el mapa, Leaflet le da el foco. En la web del móvil el mapa es más alto que lo que se ve (la
+// cabecera se va al bajar), así que el navegador bajaba la página en mitad del toque y este caía fuera del
+// punto: no abría nada. Foco sin mover la página, y los puntos tampoco mueven el mapa al recibirlo.
+L.Map.Keyboard.prototype._onMouseDown = function () { if (!this._focused) this._map.getContainer().focus({preventScroll: true}); };
+L.Marker.prototype.options.autoPanOnFocus = false;
 const map = L.map('map', {zoomControl: true, worldCopyJump: true}).setView([40.2, -3.7], 5);
 let tiles = null;
 function setTiles() {
@@ -133,16 +160,38 @@ function setTiles() {
 }
 setTiles();
 
-const thumb = p => '/api/thumb?path=' + enc(p.d) + '&name=' + enc(p.n);
-function icon(p, count) {
-  const size = count ? 62 : 50;
-  return L.divIcon({
-    className: '', iconSize: [size, size], iconAnchor: [size / 2, size / 2],
-    html: '<div class="ph' + (VIDEO.test(p.n) ? ' vid' : '') + (p.o ? ' otro' : '') + '"><img loading="lazy" src="' + thumb(p) + '" alt="">'
-      + (count ? '<span class="n">' + (count > 999 ? Math.round(count / 1000) + 'k' : count) + '</span>' : '')
-      + (!count && !p.o && p.c ? '<span class="con">👥</span>' : '') + '</div>'
-  });
+// un punto redondo: más grande cuantas más fotos; morado lo tuyo, naranja lo del otro, morado con aro naranja si hay de los dos
+function dot(count, mine, theirs) {
+  const size = Math.round(22 + 8 * Math.log10(Math.max(1, count))), box = Math.max(size, 40); // se toca en 40 px aunque se vea más pequeño
+  const cls = !mine ? ' otro' : theirs ? ' mix' : '';
+  const label = count < 2 ? '' : count < 1000 ? String(count) : (count / 1000).toFixed(count < 10000 ? 1 : 0).replace('.0', '') + 'k';
+  return L.divIcon({className: '', iconSize: [box, box], iconAnchor: [box / 2, box / 2],
+    html: '<div class="hit"><div class="dot' + cls + '" style="width:' + size + 'px;height:' + size + 'px">' + label + '</div></div>'});
 }
+// las fotos de un mismo sitio (a unos 10 m) van en un solo punto
+function places(list) {
+  const by = new Map();
+  for (const p of list) {
+    const k = p.la.toFixed(4) + ',' + p.lo.toFixed(4);
+    let g = by.get(k);
+    if (!g) by.set(k, g = {la: p.la, lo: p.lo, items: []});
+    g.items.push(p);
+  }
+  return [...by.values()];
+}
+const plural = (n, one, many) => fmt(n) + ' ' + (n === 1 ? one : many);
+const photos = items => {
+  const v = items.filter(p => VIDEO.test(p.n)).length, f = items.length - v;
+  return [f ? plural(f, 'foto', 'fotos') : '', v ? plural(v, 'vídeo', 'vídeos') : ''].filter(Boolean).join(' y ');
+};
+const SHARED = '👥 Compartido conmigo';
+// cómo se llama la carpeta para la gente (las rutas especiales, sin el prefijo)
+function folderName(d, o) {
+  if (d === MAPA_COMUN || d.startsWith(MAPA_COMUN + '/')) return 'De ' + o + (d.split('/').slice(2).join('/') ? ' · ' + d.split('/').slice(2).join('/') : '');
+  if (d.startsWith(SHARED + '/')) return d.slice(SHARED.length + 1); // ya dice de quién: «Fer · Toledo»
+  return d || 'Carpeta principal';
+}
+const openable = d => d !== MAPA_COMUN && !d.startsWith(MAPA_COMUN + '/') && (!EN_APP || !!(window.SubeloApp && SubeloApp.carpeta));
 
 // lo que se ve: por año y de quién (todas, las mías o las del otro)
 function visible() {
@@ -155,19 +204,31 @@ function build() {
   if (key === lastKey) return;
   lastKey = key;
   if (layer) map.removeLayer(layer);
+  closeSheet();
   layer = L.markerClusterGroup({
-    showCoverageOnHover: false, maxClusterRadius: 70, spiderfyDistanceMultiplier: 2.2, chunkedLoading: true,
+    showCoverageOnHover: false, maxClusterRadius: 60, chunkedLoading: true,
+    spiderfyOnMaxZoom: false, zoomToBoundsOnClick: false, // nada de abanicos de fotos: se acerca o se dice qué hay
     iconCreateFunction: c => {
-      // portada: la foto más reciente del grupo
-      let best = null;
-      for (const m of c.getAllChildMarkers()) if (!best || (m.p.t || '') > (best.t || '')) best = m.p;
-      return icon(best, c.getChildCount());
+      let n = 0, mine = false, theirs = false;
+      for (const m of c.getAllChildMarkers()) { n += m.g.items.length; mine = mine || m.g.mine; theirs = theirs || m.g.theirs; }
+      return dot(n, mine, theirs);
     }
   });
-  const markers = list.map(p => {
-    const m = L.marker([p.la, p.lo], {icon: icon(p, 0)});
-    m.p = p;
-    m.on('click', () => openAt(p));
+  layer.on('clusterclick', e => {
+    const c = e.layer, b = c.getBounds();
+    // cerca del todo (o todos en el mismo sitio): qué carpetas hay; si no, se acerca
+    if (map.getZoom() >= 15 || map.getBoundsZoom(b) <= map.getZoom() || b.getNorthEast().distanceTo(b.getSouthWest()) < 200) {
+      openPlace([].concat(...c.getAllChildMarkers().map(m => m.g.items)));
+    } else c.zoomToBounds({padding: [50, 50]});
+  });
+  const markers = places(list).map(g => {
+    g.mine = g.items.some(p => !p.o); g.theirs = g.items.some(p => p.o);
+    const m = L.marker([g.la, g.lo], {icon: dot(g.items.length, g.mine, g.theirs), keyboard: true});
+    m.g = g;
+    const names = [...new Set(g.items.map(p => folderName(p.d, p.o)))];
+    m.bindTooltip(photos(g.items) + ' · ' + names.slice(0, 2).join(', ') + (names.length > 2 ? ' y ' + (names.length - 2) + ' más' : ''),
+      {className: 'tip mono', direction: 'top', offset: [0, -14]});
+    m.on('click', () => openPlace(g.items));
     return m;
   });
   layer.addLayers(markers);
@@ -183,15 +244,16 @@ function years() {
   const others = [...new Set(all.map(p => p.o).filter(Boolean))].sort();
   const box = $('years');
   box.innerHTML = '';
-  const add = (label, on, click) => {
+  const add = (label, on, click, color) => {
     const b = document.createElement('button');
     b.textContent = label; b.className = on ? 'on' : ''; b.onclick = click;
+    if (color) { const k = document.createElement('span'); k.className = 'k'; k.style.background = color; b.prepend(k); }
     box.appendChild(b);
   };
-  if (others.length) { // mapa común: las de los dos, las mías o las del otro
+  if (others.length) { // mapa común: las de los dos, las mías o las del otro (con su color de punto)
     add('👥 Todas', !whose, () => { whose = ''; years(); build(); });
-    add('Mías', whose === 'mias', () => { whose = 'mias'; years(); build(); });
-    for (const o of others) add('De ' + o, whose === o, () => { whose = o; years(); build(); });
+    add('Mías', whose === 'mias', () => { whose = 'mias'; years(); build(); }, 'var(--purple)');
+    for (const o of others) add('De ' + o, whose === o, () => { whose = o; years(); build(); }, 'var(--orange)');
   }
   if (ys.length >= 2) {
     if (others.length) { const sep = document.createElement('span'); sep.className = 'sep'; box.appendChild(sep); }
@@ -240,17 +302,64 @@ addEventListener('message', e => {
   lastKey = ''; closeViewer(); load();
 });
 
-// ---------- ver una foto ----------
-function openAt(p) {
-  // las fotos que se ven ahora en el mapa, por fecha, para poder pasar con ‹ ›
-  const b = map.getBounds();
-  let list = visible().filter(x => b.contains([x.la, x.lo]));
-  list.sort((a, c) => (a.t || '').localeCompare(c.t || '') || a.n.localeCompare(c.n));
-  if (list.length > 300) {
-    const i = list.indexOf(p);
-    list = list.slice(Math.max(0, i - 150), Math.max(0, i - 150) + 300);
+// ---------- tocar un punto: se abre su carpeta ----------
+function openPlace(items) {
+  const by = new Map();
+  for (const p of items) {
+    const k = p.o + '|' + p.d;
+    if (!by.has(k)) by.set(k, {d: p.d, o: p.o, items: []});
+    by.get(k).items.push(p);
   }
-  const idx = Math.max(0, list.indexOf(p));
+  const groups = [...by.values()].sort((a, b) => b.items.length - a.items.length || a.d.localeCompare(b.d));
+  if (groups.length === 1) { // todo de una carpeta: se abre directamente
+    if (openable(groups[0].d)) openFolder(groups[0].d); else openPhotos(groups[0].items);
+    return;
+  }
+  $('shT').textContent = photos(items) + ' aquí · en ' + groups.length + ' carpetas';
+  const list = $('shList');
+  list.innerHTML = '';
+  for (const g of groups) {
+    const row = document.createElement('div');
+    row.className = 'row'; row.tabIndex = 0;
+    row.innerHTML = '<span class="k"></span><span class="t"><b></b><small></small></span>';
+    row.querySelector('.k').style.background = g.o ? 'var(--orange)' : 'var(--purple)';
+    row.querySelector('b').textContent = (openable(g.d) ? '📁 ' : '🔒 ') + folderName(g.d, g.o);
+    row.querySelector('small').textContent = photos(g.items) + ' en este sitio';
+    const see = document.createElement('button');
+    see.className = 'mono'; see.textContent = '▶ Ver';
+    see.title = 'Ver solo las de este sitio';
+    see.onclick = e => { e.stopPropagation(); openPhotos(g.items); };
+    row.appendChild(see);
+    row.onclick = () => openable(g.d) ? openFolder(g.d) : openPhotos(g.items);
+    row.onkeydown = e => { if (e.key === 'Enter') row.onclick(); };
+    list.appendChild(row);
+  }
+  $('sheet').style.display = 'flex';
+  showBottom();
+}
+// En la web del móvil el mapa es más alto que la pantalla: que se vea la lista de abajo
+function showBottom() {
+  try {
+    const f = EMBED && frameElement, r = f && f.getBoundingClientRect();
+    if (r && r.bottom > parent.innerHeight + 1) parent.scrollBy({top: r.bottom - parent.innerHeight, behavior: 'smooth'});
+  } catch (e) {}
+}
+function closeSheet() { $('sheet').style.display = 'none'; }
+$('shX').onclick = closeSheet;
+map.on('click', () => { if (!PICK) closeSheet(); });
+
+function openFolder(d) {
+  closeSheet();
+  if (EN_APP) SubeloApp.carpeta(d); // el móvil la abre en «Mis fotos por carpetas»
+  else if (EMBED) top.location.hash = '#fotos/' + enc(d); // la web, en «Mis fotos»
+  else location.href = '/#fotos/' + enc(d);
+}
+
+// ---------- ver fotos (las del otro, o «▶ Ver» las de un sitio) ----------
+function openPhotos(items, start) {
+  closeSheet();
+  const list = items.slice().sort((a, c) => (a.t || '').localeCompare(c.t || '') || a.n.localeCompare(c.n));
+  const idx = Math.max(0, start ? list.indexOf(start) : 0);
   if (EN_APP && window.SubeloApp) { SubeloApp.ver(JSON.stringify(list.map(x => [x.d, x.n, x.s, x.o ? 0 : 1, x.o])), idx); return; }
   vlist = list; show(idx);
 }
@@ -286,7 +395,7 @@ $('vgeo').onclick = () => { if (vi >= 0) tell({subelo: 'ubicar', dir: vlist[vi].
 $('prev').onclick = () => show(vi - 1);
 $('next').onclick = () => show(vi + 1);
 document.addEventListener('keydown', e => {
-  if (vi < 0) return;
+  if (vi < 0) { if (e.key === 'Escape') closeSheet(); return; }
   if (e.key === 'Escape') closeViewer();
   else if (e.key === 'ArrowLeft') show(vi - 1);
   else if (e.key === 'ArrowRight') show(vi + 1);
