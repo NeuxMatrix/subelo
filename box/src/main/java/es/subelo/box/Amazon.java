@@ -41,6 +41,13 @@ final class Amazon {
         }
     }
 
+    /** Amazon dice que ya tiene la foto, pero en la papelera, y no deja subir otra: solo falla esa. */
+    static final class InTrash extends IOException {
+        InTrash(String msg) {
+            super(msg);
+        }
+    }
+
     static final class Album {
         final String id, name;
         final int count;
@@ -266,9 +273,9 @@ final class Amazon {
      */
     Uploaded uploadNode(String parentId, String name, Opener data, long size, boolean copy) throws IOException {
         String tryName = name;
-        boolean plain = false;
+        boolean plain = false, fresh = false;
         for (int attempt = 1; attempt <= 5; attempt++) {
-            boolean suppress = copy && !noCopies && !plain;
+            boolean suppress = (copy || fresh) && !noCopies && !plain;
             InputStream in = data.open();
             Resp r;
             try {
@@ -295,8 +302,14 @@ final class Amazon {
             JSONObject cp = node == null ? null : node.optJSONObject("contentProperties");
             boolean trashed = node != null && "TRASH".equals(node.optString("status"));
             if (trashed && !hasParent(node, parentId)) {
-                // Amazon dice que ya la tiene, pero en la papelera: esa no vale (se borra sola)
-                throw new IOException("Amazon tiene " + name + " en la papelera y no deja subirla otra vez");
+                // Amazon dice que ya la tiene, pero en la papelera: esa no vale (se borra sola). Se pide otra
+                if (!suppress && !noCopies && !fresh) {
+                    fresh = true;
+                    attempt--;
+                    continue;
+                }
+                throw new InTrash("Amazon tiene " + name + " en la papelera y no deja subirla otra vez: sácala de la "
+                        + "papelera de Amazon Fotos, o vacíala");
             }
             if (!trashed && cp != null && cp.optLong("size", -1) == size) { // la misma foto ya estaba
                 return new Uploaded(existing, hasParent(node, parentId));

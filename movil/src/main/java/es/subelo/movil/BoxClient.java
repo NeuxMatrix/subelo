@@ -542,6 +542,10 @@ final class BoxClient {
         return newFeature("/api/backup");
     }
 
+    /** Para un box que no da «removing» en backup(): deja de copiar pero no sabe borrar de Amazon. */
+    static final String OLD_BOX_TRASH = "El Súbelo de la tele tiene una versión antigua y no sabe borrar de Amazon. "
+            + "Actualízalo (en la tele abre «Súbelo Servidor» y pulsa «Buscar actualizaciones») y vuelve a probar.";
+
     JSONObject backupAdd(String path) throws IOException {
         List<String[]> f = new ArrayList<String[]>();
         f.add(new String[]{"path", path});
@@ -560,7 +564,8 @@ final class BoxClient {
         JSONObject o = form("/api/backup/remove", f);
         if (!o.has("removing")) { // hasta la 2.22 solo se dejaba de copiar
             throw new BoxException(404, "Ya no se copia, pero el box tiene una versión antigua y no lo borra de Amazon. "
-                    + "En la tele abre «Súbelo Servidor», pulsa «Buscar actualizaciones» e instala la nueva.");
+                    + "Actualiza el Súbelo de la tele (abre «Súbelo Servidor» y pulsa «Buscar actualizaciones») y luego "
+                    + "bórrala desde «☁ Copias en Amazon», manteniéndola pulsada.");
         }
         return o;
     }

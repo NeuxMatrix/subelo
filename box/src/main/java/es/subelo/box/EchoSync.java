@@ -549,6 +549,7 @@ final class EchoSync {
             Amazon a = amazon(p);
             List<String> toAdd = new ArrayList<String>(), toRemove = new ArrayList<String>();
             Set<String> present = new HashSet<String>();
+            String skipped = null;
             int pending = 0;
             for (Store.FileInfo f : photos) {
                 Entry e = state.get(f.name);
@@ -573,32 +574,29 @@ final class EchoSync {
                         folder = a.folder(p.getProperty("root"), AMAZON_FOLDER);
                         setFolder(c, user, gen, folder);
                     }
-                    Amazon.Uploaded up = a.uploadNode(folder, f.name, new Amazon.Opener() {
-                        @Override
-                        public InputStream open() throws IOException {
-                            final Store.Readable rd = st(c).read(dir, f.name);
-                            if (rd == null) throw new IOException("Ya no está " + f.name);
-                            final InputStream in = rd.open(0);
-                            return new java.io.FilterInputStream(in) {
-                                @Override
-                                public void close() throws IOException {
-                                    try {
-                                        super.close();
-                                    } finally {
-                                        rd.close();
+                    Amazon.Uploaded up;
+                    try {
+                        up = a.uploadNode(folder, f.name, new Amazon.Opener() {
+                            @Override
+                            public InputStream open() throws IOException {
+                                final Store.Readable rd = st(c).read(dir, f.name);
+                                if (rd == null) throw new IOException("Ya no está " + f.name);
+                                final InputStream in = rd.open(0);
+                                return new java.io.FilterInputStream(in) {
+                                    @Override
+                                    public void close() throws IOException {
+                                        try {
+                                            super.close();
+                                        } finally {
+                                            rd.close();
+                                        }
                                     }
-                                }
-                            };
-                        }
-                    }, f.size);
-                    if (!up.inFolder) {
-                        // ya estaba en Amazon en otra carpeta (la copia de seguridad, que va oculta, o la
-                        // del móvil): se usa esa, pero sin ocultar, que es para que salga en el Echo
-                        try {
-                            a.setHidden(up.id, false);
-                        } catch (Amazon.AmazonException ex) {
-                            if (ex.code == 401) throw ex;
-                        }
+                                };
+                            }
+                        }, f.size);
+                    } catch (Amazon.InTrash ex) {
+                        skipped = ex.getMessage(); // solo esa: las demás siguen
+                        continue;
                     }
                     Entry n = new Entry();
                     n.name = f.name;
@@ -606,6 +604,17 @@ final class EchoSync {
                     n.node = up.id;
                     n.album = null;
                     state.put(f.name, n);
+                    if (!up.inFolder) {
+                        // ya estaba en Amazon en otra carpeta (la copia de seguridad, que va oculta, o la
+                        // del móvil): se usa esa, pero sin ocultar, que es para que salga en el Echo. Se
+                        // apunta ya, para que al dejar de copiar esa carpeta no se lleve esta foto
+                        save(c, user, gen, state);
+                        try {
+                            a.setHidden(up.id, false);
+                        } catch (Amazon.AmazonException ex) {
+                            if (ex.code == 401) throw ex;
+                        }
+                    }
                     toAdd.add(up.id);
                     if (toAdd.size() >= 10) flush(c, user, gen, a, album, state, toAdd, toRemove, s);
                 }
@@ -615,7 +624,7 @@ final class EchoSync {
                     state.remove(e.name);
                 }
                 flush(c, user, gen, a, album, state, toAdd, toRemove, s);
-                s.lastError = null;
+                s.lastError = skipped;
                 s.lastOk = System.currentTimeMillis();
             } catch (AccountChanged e) {
                 // lo de la sesión de antes ya no vale: ni se guarda ni es un error

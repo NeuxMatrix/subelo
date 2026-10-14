@@ -221,7 +221,9 @@ final class Backup {
             if (trash) {
                 List<String[]> rm = removals(c, user), keep = new ArrayList<String[]>();
                 for (String[] r : rm) if (!r[1].equals(root) || !r[0].equals(rel) && !r[0].startsWith(rel + "/")) keep.add(r);
-                keep.add(new String[]{rel, root, String.valueOf(System.currentTimeMillis())});
+                // su carpeta de Amazon, si se sabe: así se encuentra aunque allí se llame «… (2)»
+                String dir = saved.root == null || saved.root.equals(root) ? saved.dirs.get(rel) : null;
+                keep.add(new String[]{rel, root, String.valueOf(System.currentTimeMillis()), dir == null ? "" : dir});
                 saveRemovals(c, user, keep);
             }
         }
@@ -231,7 +233,10 @@ final class Backup {
         kick(c, user);
     }
 
-    /** Lo que falta borrar de Amazon: {ruta, cuenta de Amazon («» si no se sabía), cuándo se pidió}. */
+    /**
+     * Lo que falta borrar de Amazon: {ruta, cuenta de Amazon («» si no se sabía), cuándo se pidió, su
+     * carpeta de Amazon («» si no se sabía)}.
+     */
     static synchronized List<String[]> removals(Context c, String user) {
         List<String[]> out = new ArrayList<String[]>();
         File f = removalsFile(c, user);
@@ -242,7 +247,8 @@ final class Backup {
                 String l;
                 while ((l = in.readLine()) != null) {
                     String[] x = l.split("\t", -1);
-                    if (x.length == 3 && !x[0].isEmpty()) out.add(x);
+                    if (x.length == 3) x = new String[]{x[0], x[1], x[2], ""};
+                    if (x.length == 4 && !x[0].isEmpty()) out.add(x);
                 }
             } finally {
                 in.close();
@@ -260,7 +266,7 @@ final class Backup {
         }
         Writer w = new OutputStreamWriter(new FileOutputStream(tmp), "UTF-8");
         try {
-            for (String[] r : list) w.write(r[0] + "\t" + r[1] + "\t" + r[2] + "\n");
+            for (String[] r : list) w.write(r[0] + "\t" + r[1] + "\t" + r[2] + "\t" + r[3] + "\n");
         } finally {
             w.close();
         }
@@ -317,13 +323,15 @@ final class Backup {
         if (before) {
             return other + " entró en Súbelo con esta misma cuenta de Amazon, así que sabe entrar en ella y vería "
                     + "tus copias (Amazon Fotos no tiene perfiles). Si la cuenta es tuya, cámbiale la contraseña en "
-                    + "Amazon y pulsa «" + other + " ya no puede entrar». Si no, entra con tu propia cuenta de Amazon.";
+                    + "Amazon y pulsa «" + other + " ya no puede entrar». Si no, pulsa antes «Dejar de hacer copia» en "
+                    + "cada carpeta copiada (se borra de esta cuenta) y luego entra con tu propia cuenta de Amazon.";
         }
         return "Tu cuenta de Amazon es la misma que tiene conectada " + other + ", y Amazon Fotos no tiene "
-                + "perfiles: cada uno vería las fotos del otro. Para hacer copias, cada uno tiene que entrar con su "
-                + "propia cuenta de Amazon (pulsa «Desconectar» y entra con la tuya). Lo que ya se haya copiado sigue "
-                + "en esa cuenta, en «" + AMAZON_FOLDER + "/" + user + "»: si no quieres que " + other + " lo vea, "
-                + "deja de copiar esas carpetas («Dejar de hacer copia») y se borra de Amazon.";
+                + "perfiles: cada uno vería las fotos del otro. Lo que ya se copió sigue en esa cuenta, en «"
+                + AMAZON_FOLDER + "/" + user + "»: si no quieres que " + other + " lo vea, antes de cambiar de cuenta "
+                + "pulsa «Dejar de hacer copia» en cada carpeta copiada y espera a que se borre de Amazon. Luego, para "
+                + "hacer copias, cada uno tiene que entrar con su propia cuenta de Amazon (pulsa «Desconectar» y entra "
+                + "con la tuya).";
     }
 
     static JSONObject statusJson(Context c, String user) throws JSONException {
@@ -581,6 +589,8 @@ final class Backup {
                         }
                     } catch (HideStopped ex) {
                         throw ex;
+                    } catch (Amazon.InTrash ex) {
+                        lastFileError = ex.getMessage(); // es cosa de esa foto: las demás siguen
                     } catch (Amazon.AmazonException ex) {
                         if (ex.code == 401) throw ex;
                         lastFileError = it.name + ": " + ex.getMessage();
@@ -667,7 +677,10 @@ final class Backup {
             if (all) FULL_CHECK.put(user, now);
         }
         List<String> check = new ArrayList<String>();
-        for (String d : state.dirs.keySet()) if (d.isEmpty() || (all ? covered(folders, d) : folders.contains(d))) check.add(d);
+        for (String d : state.dirs.keySet()) {
+            // también las de fuera de una marcada: si se borra «A», «A/B» se haría dentro de la papelera
+            if (holdsMarked(folders, d) || (all ? covered(folders, d) : folders.contains(d))) check.add(d);
+        }
         java.util.Collections.sort(check); // antes la de fuera que las de dentro
         for (String f : check) {
             String id = state.dirs.get(f);
@@ -712,10 +725,11 @@ final class Backup {
             Amazon x = a;
             Properties xp = p;
             State xs = state;
+            String[] other = null;
             if (!own) {
                 // la copia se quedó en otra cuenta de Amazon (p. ej. la que compartía con el otro y se
                 // ha cambiado a la suya): se borra con la sesión de quien la siga teniendo conectada
-                String[] other = EchoSync.sessionFor(c, r[1], user);
+                other = EchoSync.sessionFor(c, r[1], user);
                 if (other == null) {
                     long since;
                     try {
@@ -726,8 +740,7 @@ final class Backup {
                     if (System.currentTimeMillis() - since > GIVE_UP_MS) {
                         removalDone(c, user, r); // ni se vuelve a esa cuenta: se deja estar
                     } else {
-                        err = "«" + rel + "» sigue copiada en la otra cuenta de Amazon con la que entraste. Para borrarla, "
-                                + "vuelve a entrar con esa cuenta un momento.";
+                        err = otherAccount(rel);
                     }
                     continue;
                 }
@@ -745,6 +758,11 @@ final class Backup {
                 throw e;
             } catch (Amazon.AmazonException e) {
                 if (e.code == 401 && own) throw e;
+                if (e.code == 401) { // la sesión del otro ya no vale: hasta que vuelva a entrar no se puede
+                    EchoSync.markExpired(c, other[0], other[1], e.getMessage());
+                    err = otherAccount(rel);
+                    continue;
+                }
                 err = "No he podido borrar «" + rel + "» de Amazon (" + e.getMessage() + "). Lo vuelvo a intentar en el siguiente repaso.";
                 continue;
             } catch (IOException e) {
@@ -755,6 +773,11 @@ final class Backup {
         }
         s.removeError = err;
         s.current = null;
+    }
+
+    private static String otherAccount(String rel) {
+        return "«" + rel + "» sigue copiada en la otra cuenta de Amazon con la que entraste. Para borrarla, "
+                + "vuelve a entrar con esa cuenta un momento.";
     }
 
     /** ¿Sigue haciendo falta? (puede que la hayan vuelto a marcar mientras se miraba qué hay) */
@@ -783,7 +806,7 @@ final class Backup {
     private static boolean trashFolder(Context c, String user, Amazon a, Properties p, State state, boolean own, String[] r,
                                        List<String> marked, int gen) throws IOException {
         String rel = r[0];
-        String id = findDir(a, p, state, user, rel);
+        String id = findDir(a, p, state, user, rel, r[3]);
         if (id == null) { // en Amazon no hay nada
             if (own) {
                 forget(state, rel, marked);
@@ -801,16 +824,28 @@ final class Backup {
         }
         List<String> dirs = new ArrayList<String>();
         String lastFile = null;
+        int rescans = 0;
         for (int round = 0; round < 5; round++) {
             Dir top = scan(a, id, rel, marked, keep, 0);
             List<String> files = new ArrayList<String>();
             dirs = new ArrayList<String>();
             plan(top, files, dirs);
+            // mientras se miraba, el Echo puede haber cogido alguna (si ya estaba en Amazon, usa esa)
+            Set<String> echo = EchoSync.nodes(c);
+            echo.removeAll(keep);
+            echo.retainAll(files);
+            if (!echo.isEmpty()) {
+                if (++rescans > 10) throw new IOException("el Echo está subiendo fotos de esta carpeta");
+                keep.addAll(echo);
+                round--;
+                continue;
+            }
             if (round == 0) {
                 if (!stillWanted(c, user, r, own)) return false;
                 if (own) {
-                    // se olvida antes de borrar nada: si se queda a medias y la vuelven a marcar, se sube de nuevo
-                    forget(state, rel, marked);
+                    // se olvida lo subido antes de borrar nada: si se queda a medias y la vuelven a marcar,
+                    // se sube de nuevo. Las carpetas no: con ellas se encuentra lo que quede si falla
+                    forgetFiles(state, rel, marked);
                     save(c, user, state);
                 }
             }
@@ -820,6 +855,8 @@ final class Backup {
                 lastFile = files.get(files.size() - 1);
             }
             if (!top.capped) break;
+            // aún quedan (más de 5 × 9800 de golpe): la carpeta no se toca hasta haberlo visto todo
+            if (round == 4) throw new IOException("aún quedan archivos: Amazon los da por partes");
         }
         a.trash(dirs);
         // Amazon no dice qué ha hecho: se mira que de verdad estén en la papelera
@@ -828,6 +865,10 @@ final class Backup {
         for (String x : check) {
             JSONObject n = a.nodeIfMine(x);
             if (n != null && !"TRASH".equals(n.optString("status"))) throw new IOException("Amazon no lo ha llevado a la papelera");
+        }
+        if (own) {
+            forget(state, rel, marked);
+            save(c, user, state);
         }
         return true;
     }
@@ -846,7 +887,7 @@ final class Backup {
             String cid = ch.optString("id");
             JSONArray parents = ch.optJSONArray("parents");
             // por si Amazon no hiciera caso del filtro: solo lo que de verdad está en esta carpeta
-            if (parents != null && parents.length() > 0 && !Amazon.hasParent(ch, id)) continue;
+            if (parents != null && !Amazon.hasParent(ch, id)) continue;
             if ("FOLDER".equals(ch.optString("kind"))) {
                 String sub = path + "/" + ch.optString("name");
                 if (keep.contains(cid) || covered(marked, sub)) {
@@ -880,10 +921,10 @@ final class Backup {
         }
     }
 
-    /** La carpeta de Amazon de «rel» si está (no la crea). */
-    private static String findDir(Amazon a, Properties p, State state, String user, String rel) throws IOException {
-        String id = state.dirs.get(rel);
-        if (id != null) {
+    /** La carpeta de Amazon de «rel» si está (no la crea). dir: la que se apuntó al pedir borrarla. */
+    private static String findDir(Amazon a, Properties p, State state, String user, String rel, String dir) throws IOException {
+        for (String id : new String[]{state.dirs.get(rel), dir}) {
+            if (id == null || id.isEmpty()) continue;
             JSONObject n = a.nodeIfMine(id);
             if (n != null && !"TRASH".equals(n.optString("status"))) return id;
         }
@@ -901,6 +942,7 @@ final class Backup {
 
     private static String childFolder(Amazon a, String parent, String name) throws IOException {
         for (JSONObject ch : a.children(parent)) {
+            if (ch.optJSONArray("parents") != null && !Amazon.hasParent(ch, parent)) continue; // no está en esa
             if ("FOLDER".equals(ch.optString("kind")) && name.equals(ch.optString("name"))) return ch.optString("id");
         }
         return null;
@@ -908,13 +950,17 @@ final class Backup {
 
     /** Se olvida lo apuntado de «rel» (ya no está en Amazon), menos lo que siga marcado. */
     private static void forget(State state, String rel, List<String> marked) {
-        for (java.util.Iterator<Map.Entry<String, Entry>> it = state.files.entrySet().iterator(); it.hasNext(); ) {
-            String dir = dirOf(it.next().getKey());
-            if ((dir.equals(rel) || dir.startsWith(rel + "/")) && !covered(marked, dir)) it.remove();
-        }
+        forgetFiles(state, rel, marked);
         for (java.util.Iterator<String> it = state.dirs.keySet().iterator(); it.hasNext(); ) {
             String dir = it.next();
             if ((dir.equals(rel) || dir.startsWith(rel + "/")) && !covered(marked, dir) && !holdsMarked(marked, dir)) it.remove();
+        }
+    }
+
+    private static void forgetFiles(State state, String rel, List<String> marked) {
+        for (java.util.Iterator<Map.Entry<String, Entry>> it = state.files.entrySet().iterator(); it.hasNext(); ) {
+            String dir = dirOf(it.next().getKey());
+            if ((dir.equals(rel) || dir.startsWith(rel + "/")) && !covered(marked, dir)) it.remove();
         }
     }
 

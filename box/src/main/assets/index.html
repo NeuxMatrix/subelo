@@ -978,7 +978,7 @@ $('backup').onclick = async () => {
   // borrar de Amazon lo hace el box con la sesión de esa cuenta: mejor no cambiar de cuenta mientras
   const busy = (j.removing || []).length ? '⌛ Aún se está borrando de Amazon lo que dejaste de copiar: espera a que acabe antes de entrar con otra cuenta.\n\n' : '';
   if (j.connected && j.sameAs && j.sameBefore) {
-    txt = busy + '🔒 ' + j.sameAs + ' entró en Súbelo con tu misma cuenta de Amazon, así que sabe entrar en ella y vería tus copias (Amazon Fotos no tiene perfiles). Por eso no se hacen.\n\nSi la cuenta es tuya, cámbiale la contraseña en Amazon (y cierra la sesión en todos los dispositivos) y pulsa «' + j.sameAs + ' ya no puede entrar». Si no es tuya, entra con tu propia cuenta desde la app del móvil.';
+    txt = busy + '🔒 ' + j.sameAs + ' entró en Súbelo con tu misma cuenta de Amazon, así que sabe entrar en ella y vería tus copias (Amazon Fotos no tiene perfiles). Por eso no se hacen.\n\nSi la cuenta es tuya, cámbiale la contraseña en Amazon (y cierra la sesión en todos los dispositivos) y pulsa «' + j.sameAs + ' ya no puede entrar». Si no es tuya, pulsa antes «Dejar de hacer copia» en cada carpeta copiada (se borra de esta cuenta) y luego entra con tu propia cuenta desde la app del móvil.';
     trust = true; off = backupMode === 'on';
     $('backupTrust').textContent = j.sameAs + ' ya no puede entrar';
     $('backupTrust').onclick = async () => {
@@ -988,13 +988,13 @@ $('backup').onclick = async () => {
       try { await post('/api/amazon/trust', [['password', pw]]); modal('backupBox', false); toast('☁ Vuelven las copias en Amazon'); load(); } catch (e) { fail(e); }
     };
   } else if (j.connected && j.sameAs) {
-    txt = busy + '🔒 Tu Súbelo y el de ' + j.sameAs + ' están conectados a la misma cuenta de Amazon. Amazon Fotos no tiene perfiles: con una sola cuenta cada uno vería las fotos del otro, así que no se hacen copias.\n\nPara hacerlas, cada uno tiene que entrar con su propia cuenta de Amazon (en el móvil: ☁ en la carpeta › «Entrar con otra cuenta»). Para que las dos cuentas tengan fotos ilimitadas, quien tenga Prime puede invitar a la otra a su «Archivo familiar» desde Amazon Fotos; dejad apagado «añadir subidas al Archivo familiar».\n\nLo que ya se copió sigue en esa cuenta, en «' + j.amazonFolder + '»: si no quieres que ' + j.sameAs + ' lo vea, pulsa «Dejar de hacer copia» en cada carpeta copiada y se borra de Amazon.';
+    txt = busy + '🔒 Tu Súbelo y el de ' + j.sameAs + ' están conectados a la misma cuenta de Amazon. Amazon Fotos no tiene perfiles: con una sola cuenta cada uno vería las fotos del otro, así que no se hacen copias.\n\nLo que ya se copió sigue en esa cuenta, en «' + j.amazonFolder + '». Si no quieres que ' + j.sameAs + ' lo vea, antes de cambiar de cuenta pulsa «Dejar de hacer copia» en cada carpeta copiada y espera a que se borre de Amazon. Si cambias antes, ya solo se puede borrar en la web de Amazon Fotos.\n\nPara hacer copias, cada uno tiene que entrar con su propia cuenta de Amazon (en el móvil: ☁ en la carpeta › «Entrar con otra cuenta»). Para que las dos cuentas tengan fotos ilimitadas, quien tenga Prime puede invitar a la otra a su «Archivo familiar» desde Amazon Fotos; dejad apagado «añadir subidas al Archivo familiar».';
     off = backupMode === 'on';
   } else if (!j.connected || j.expired) {
     txt = (j.expired ? 'La sesión de Amazon ha caducado.' : 'Súbelo aún no está conectado con tu Amazon.') + ' Entra en Amazon desde la app del móvil (☁ en la carpeta, o «📺 Fotos al Echo») y vuelve aquí.';
     off = backupMode === 'on';
   } else if (!backupMode) {
-    txt = ((j.removing || []).some(x => path === x || path.startsWith(x + '/')) ? '⌛ Se está borrando de Amazon lo que se copió de esta carpeta.\n\n' : '') + 'Se sube una copia de esta carpeta, con todo lo que tenga dentro, a «Súbelo Backup» de tu Amazon Fotos. Lo que añadas después también se copia. Las fotos se suben ocultas y fuera de los álbumes, para que no salgan en el Echo ni en los recuerdos. Si se rompe el disco, ahí lo tienes; y fuera de casa lo ves en la app, en «☁ Copias en Amazon».';
+    txt = ((j.removing || []).some(x => path === x || path.startsWith(x + '/')) ? '⌛ Se está borrando de Amazon lo que se copió de esta carpeta.\n\n' + (j.error ? '✖ ' + j.error.trim() + '\n\n' : '') : '') + 'Se sube una copia de esta carpeta, con todo lo que tenga dentro, a «Súbelo Backup» de tu Amazon Fotos. Lo que añadas después también se copia. Las fotos se suben ocultas y fuera de los álbumes, para que no salgan en el Echo ni en los recuerdos. Si se rompe el disco, ahí lo tienes; y fuera de casa lo ves en la app, en «☁ Copias en Amazon».';
     on = true;
   } else if (backupMode === 'inside') {
     txt = '✓ Ya tiene copia en Amazon: está dentro de otra carpeta que la tiene. ' + prog + err;

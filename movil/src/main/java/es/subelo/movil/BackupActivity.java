@@ -532,14 +532,23 @@ public class BackupActivity extends Activity {
             @Override
             public void run() {
                 String err = null;
+                boolean old = false, later = false;
                 try {
-                    BoxClient.connect(BackupActivity.this).backupRemove(rel, n.id);
+                    BoxClient c = BoxClient.connect(BackupActivity.this);
+                    // un box antiguo dejaría de copiarla sin borrarla de Amazon: entonces no se toca nada
+                    if (!c.backup().has("removing")) {
+                        old = true;
+                    } else {
+                        JSONObject o = c.backupRemove(rel, n.id);
+                        later = !o.optBoolean("connected") || o.optBoolean("expired");
+                    }
                 } catch (BoxClient.BoxException e) {
                     err = e.getMessage();
                 } catch (IOException e) {
                     err = "No encuentro el box: para borrar de Amazon tienes que estar en casa, con el Wi-Fi.";
                 }
                 final String error = err;
+                final boolean oldBox = old, queued = later;
                 runOnUiThread(new Runnable() {
                     @Override
                     public void run() {
@@ -548,8 +557,20 @@ public class BackupActivity extends Activity {
                             Toast.makeText(BackupActivity.this, "✖ " + error, Toast.LENGTH_LONG).show();
                             return;
                         }
-                        Toast.makeText(BackupActivity.this, "Borrando «" + n.name + "» de Amazon. Tarda un poco.",
-                                Toast.LENGTH_LONG).show();
+                        if (oldBox) {
+                            new AlertDialog.Builder(BackupActivity.this).setMessage(BoxClient.OLD_BOX_TRASH)
+                                    .setPositiveButton("Vale", null).show();
+                            return;
+                        }
+                        if (queued) {
+                            // el box sin sesión de Amazon solo lo apunta
+                            new AlertDialog.Builder(BackupActivity.this).setMessage("Se borrará «" + n.name + "» de "
+                                    + "Amazon cuando el box vuelva a tener tu sesión: entra en Amazon desde el móvil, "
+                                    + "estando en casa.").setPositiveButton("Vale", null).show();
+                        } else {
+                            Toast.makeText(BackupActivity.this, "Borrando «" + n.name + "» de Amazon. Tarda un poco.",
+                                    Toast.LENGTH_LONG).show();
+                        }
                         if (entries.remove(n)) adapter.notifyDataSetChanged();
                     }
                 });
