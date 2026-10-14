@@ -669,6 +669,38 @@ final class EchoSync {
 
     // ---------- lo ya subido ----------
 
+    /**
+     * Las fotos de Amazon que usa el Echo de alguno. Si Amazon ya tenía la foto en una copia de
+     * seguridad, el Echo usa esa misma: la copia no la puede ocultar ni borrar.
+     */
+    static Set<String> nodes(Context c) {
+        Set<String> out = new HashSet<String>();
+        for (String u : Users.NAMES) for (Entry e : load(c, u).values()) out.add(e.node);
+        return out;
+    }
+
+    /** La última cuenta de Amazon con la que entró este usuario (aunque ya no esté conectada), o null. */
+    static String lastRoot(Context c, String user) {
+        String r = null;
+        for (String[] h : history(c)) if (h[0].equals(user)) r = h[1];
+        return r;
+    }
+
+    /**
+     * Otro usuario con sesión en esa cuenta de Amazon: {usuario, sesión, tld}, o null. Sirve para
+     * borrar las copias que se quedaron en una cuenta compartida después de cambiarse a otra.
+     */
+    static String[] sessionFor(Context c, String root, String except) {
+        for (String u : Users.NAMES) {
+            if (u.equals(except)) continue;
+            Properties p = config(c, u);
+            if (root.equals(p.getProperty("root")) && p.getProperty("cookie") != null && p.getProperty("expired") == null) {
+                return new String[]{u, p.getProperty("cookie"), p.getProperty("tld", "es")};
+            }
+        }
+        return null;
+    }
+
     private static Map<String, Entry> load(Context c, String user) {
         Map<String, Entry> m = new LinkedHashMap<String, Entry>();
         File f = stateFile(c, user);

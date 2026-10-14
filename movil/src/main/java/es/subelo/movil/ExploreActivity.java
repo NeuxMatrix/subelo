@@ -873,14 +873,19 @@ public class ExploreActivity extends Activity {
                         }
                     })
                     .setNegativeButton("Cancelar", null);
-            if ("on".equals(mode)) b.setNeutralButton("Dejar de hacer copia", stopBackup(folder, name));
+            // sin sesión se apunta, y se borra cuando se vuelva a entrar con esa cuenta
+            if ("on".equals(mode)) b.setNeutralButton("Dejar de hacer copia", stopBackup(folder, name, false));
             b.show();
             return;
         }
         final String me = Prefs.user(this);
+        // borrar de Amazon lo hace el box con la sesión de esa cuenta: mejor no cambiar de cuenta mientras
+        final String busy = status.optJSONArray("removing") != null && status.optJSONArray("removing").length() > 0
+                ? "⌛ Aún se está borrando de Amazon lo que dejaste de copiar: espera a que acabe antes de entrar con "
+                + "otra cuenta.\n\n" : "";
         if (!status.isNull("sameAs") && status.optBoolean("sameBefore")) {
             final String other = status.optString("sameAs");
-            b.setMessage("🔒 " + other + " entró en Súbelo con tu misma cuenta de Amazon, así que sabe entrar en ella y "
+            b.setMessage(busy + "🔒 " + other + " entró en Súbelo con tu misma cuenta de Amazon, así que sabe entrar en ella y "
                     + "vería tus copias (Amazon Fotos no tiene perfiles). Por eso no se hacen.\n\n"
                     + "Si la cuenta es tuya, cámbiale la contraseña en Amazon (y cierra la sesión en todos los "
                     + "dispositivos) y pulsa «" + other + " ya no puede entrar». Si no es tuya, entra con tu propia cuenta.")
@@ -897,14 +902,14 @@ public class ExploreActivity extends Activity {
                         }
                     });
             // los tres botones están ocupados: «Cerrar» se cambia por este (se cierra tocando fuera)
-            if ("on".equals(mode)) b.setNegativeButton("Dejar de hacer copia", stopBackup(folder, name));
+            if ("on".equals(mode)) b.setNegativeButton("Dejar de hacer copia", stopBackup(folder, name, true));
             else b.setNegativeButton("Cerrar", null);
             b.show();
             return;
         }
         if (!status.isNull("sameAs")) {
             String other = status.optString("sameAs");
-            b.setMessage("🔒 Tu Súbelo y el de " + other + " están conectados a la misma cuenta de Amazon. Amazon Fotos no "
+            b.setMessage(busy + "🔒 Tu Súbelo y el de " + other + " están conectados a la misma cuenta de Amazon. Amazon Fotos no "
                     + "tiene perfiles: con una sola cuenta, cada uno vería las fotos del otro, así que no se hacen copias.\n\n"
                     + "Para hacerlas, cada uno tiene que entrar con su propia cuenta de Amazon. " + other + " o tú: "
                     + "«Entrar con otra cuenta» (o «📺 Fotos al Echo») y entrar con la propia. Para que las dos cuentas "
@@ -919,7 +924,7 @@ public class ExploreActivity extends Activity {
                         }
                     })
                     .setNegativeButton("Cerrar", null);
-            if ("on".equals(mode)) b.setNeutralButton("Dejar de hacer copia", stopBackup(folder, name));
+            if ("on".equals(mode)) b.setNeutralButton("Dejar de hacer copia", stopBackup(folder, name, true));
             b.show();
             return;
         }
@@ -952,7 +957,7 @@ public class ExploreActivity extends Activity {
                     + (progress == null ? "" : "\n\n" + progress)
                     + (status.optBoolean("running") ? "\n↻ Subiendo ahora…" : "")
                     + (err == null ? "" : "\n\n✖ " + err))
-                    .setNeutralButton("Dejar de hacer copia", stopBackup(folder, name))
+                    .setNeutralButton("Dejar de hacer copia", stopBackup(folder, name, true))
                     .setPositiveButton("Ver en Amazon", new DialogInterface.OnClickListener() {
                         @Override
                         public void onClick(DialogInterface d, int w) {
@@ -964,21 +969,24 @@ public class ExploreActivity extends Activity {
     }
 
     /** «Dejar de hacer copia»: se pregunta antes, porque también se borra de Amazon. */
-    private DialogInterface.OnClickListener stopBackup(final String folder, final String name) {
+    private DialogInterface.OnClickListener stopBackup(final String folder, final String name, final boolean connected) {
         return new DialogInterface.OnClickListener() {
             @Override
             public void onClick(DialogInterface d, int w) {
                 new AlertDialog.Builder(ExploreActivity.this)
                         .setTitle("¿Dejar de copiar «" + name + "»?")
                         .setMessage("Lo que se copió de esta carpeta se borra de Amazon Fotos: va a su papelera, donde se "
-                                + "puede recuperar durante 90 días. En el disco no se toca nada.")
+                                + "puede recuperar durante 90 días. En el disco no se toca nada."
+                                + (connected ? "" : "\n\nComo ahora Súbelo no tiene tu sesión de Amazon, se borrará cuando "
+                                + "vuelvas a entrar con la misma cuenta."))
                         .setPositiveButton("Dejar de copiar y borrar de Amazon", new DialogInterface.OnClickListener() {
                             @Override
                             public void onClick(DialogInterface d2, int w2) {
-                                ExploreActivity.this.run("Ya no se copia «" + name + "». Se está borrando de Amazon.", new Op() {
+                                ExploreActivity.this.run("Ya no se copia «" + name + "». "
+                                        + (connected ? "Se está borrando de Amazon." : "Se borrará de Amazon al volver a entrar."), new Op() {
                                     @Override
                                     public void go(BoxClient c) throws IOException {
-                                        c.backupRemove(folder);
+                                        c.backupRemove(folder, null);
                                     }
                                 });
                             }

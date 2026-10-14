@@ -293,7 +293,12 @@ final class Amazon {
             if (existing == null) throw fail(r);
             JSONObject node = node(existing);
             JSONObject cp = node == null ? null : node.optJSONObject("contentProperties");
-            if (cp != null && cp.optLong("size", -1) == size) { // la misma foto ya estaba
+            boolean trashed = node != null && "TRASH".equals(node.optString("status"));
+            if (trashed && !hasParent(node, parentId)) {
+                // Amazon dice que ya la tiene, pero en la papelera: esa no vale (se borra sola)
+                throw new IOException("Amazon tiene " + name + " en la papelera y no deja subirla otra vez");
+            }
+            if (!trashed && cp != null && cp.optLong("size", -1) == size) { // la misma foto ya estaba
                 return new Uploaded(existing, hasParent(node, parentId));
             }
             int dot = name.lastIndexOf('.');

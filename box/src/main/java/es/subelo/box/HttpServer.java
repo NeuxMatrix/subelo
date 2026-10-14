@@ -79,7 +79,8 @@ import javax.net.ssl.SSLSocketFactory;
  *                            sabe entrar (se le cambió la contraseña): vuelven las copias de seguridad
  * GET  /api/backup           copia en Amazon Fotos (Backup): carpetas marcadas y cuánto llevan subido
  * POST /api/backup/add       path=: hacer backup de esa carpeta (con sus subcarpetas) en Amazon
- * POST /api/backup/remove    path=: dejar de hacerlo y borrar de Amazon lo copiado (a su papelera)
+ * POST /api/backup/remove    path= [trash=1] [node=]: dejar de hacerlo; con trash=1 también se borra de
+ *                            Amazon lo copiado (a su papelera); node= la carpeta de Amazon, si se sabe
  * POST /api/backup/sync      repasar ya
  * GET  /api/google           traer de Google Fotos (GoogleImport): ¿configurado?, clientId y la importación en curso
  * POST /api/google/setup     client=&secret=: el cliente OAuth de Google Cloud;  POST /api/google/reset: olvidarlo
@@ -489,7 +490,7 @@ final class HttpServer {
             return;
         }
         if (path.equals("/api/backup") || path.startsWith("/api/backup/")) {
-            backup(st, method, path, user, rel, acc, out);
+            backup(st, method, path, user, rel, acc, params, out);
             return;
         }
         if (acc.virtualRoot) {
@@ -839,8 +840,8 @@ final class HttpServer {
 
     // ---------- copia de seguridad en Amazon Fotos ----------
 
-    private void backup(Store st, String method, String path, String user, String rel, Shares.Access acc, OutputStream out)
-            throws IOException, JSONException {
+    private void backup(Store st, String method, String path, String user, String rel, Shares.Access acc,
+                        Map<String, String> params, OutputStream out) throws IOException, JSONException {
         if (path.equals("/api/backup")) {
             json(out, 200, Backup.statusJson(ctx, user));
             return;
@@ -881,7 +882,8 @@ final class HttpServer {
             }
         } else {
             try {
-                Backup.remove(ctx, user, rel);
+                // trash=1: borrar también de Amazon (la app de la 2.22 no lo manda: solo deja de copiar)
+                Backup.remove(ctx, user, rel, params.get("node"), "1".equals(params.get("trash")));
             } catch (IOException e) {
                 error(out, 409, e.getMessage()); // está dentro de otra marcada
                 return;

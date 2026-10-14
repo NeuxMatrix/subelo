@@ -46,6 +46,11 @@ final class Backup {
     static final String AMAZON_FOLDER = "Súbelo Backup";
     private static final long EVERY_MS = 30 * 60 * 1000L;
     private static final long KICK_DELAY_MS = 20 * 1000L;
+    private static final long DAY_MS = 24 * 60 * 60 * 1000L;
+    /** Lo que falta borrar en una cuenta de Amazon a la que ya no se vuelve se deja de intentar al mes. */
+    private static final long GIVE_UP_MS = 30 * DAY_MS;
+    /** Cuándo se miró por última vez, por usuario, que siguen en Amazon todas las carpetas de la copia. */
+    private static final Map<String, Long> FULL_CHECK = new HashMap<String, Long>();
 
     private static final class Status {
         volatile boolean running;
@@ -62,8 +67,9 @@ final class Backup {
         /**
          * «h» oculto; «n» no se oculta (no es foto ni vídeo; si lo es, es que hasta la 2.22 Amazon la
          * dejó en otra carpeta: se vuelve a subir, ver done()); «d» Amazon no ha querido subir otra
-         * copia y la dejó en otra carpeta (no se toca); «x» no se ha podido (ya no está, o Amazon no
-         * deja); «», «?», «1», «2» falta (ver pending()).
+         * copia y la dejó en otra carpeta (no se toca); «e» Amazon ya la tenía aquí y la usa el Echo
+         * (se ve, y no se borra); «x» no se ha podido (ya no está, o Amazon no deja); «», «?», «1»,
+         * «2» falta (ver pending()).
          */
         String hide = "";
     }
@@ -102,7 +108,7 @@ final class Backup {
         return new File(c.getFilesDir(), "backup-" + user + "-subido.txt");
     }
 
-    /** Carpetas que se han dejado de copiar y falta borrar de Amazon: «ruta\tcuenta de Amazon». */
+    /** Carpetas que se han dejado de copiar y falta borrar de Amazon: «ruta\tcuenta de Amazon\tcuándo». */
     private static File removalsFile(Context c, String user) {
         return new File(c.getFilesDir(), "backup-" + user + "-quitar.txt");
     }
@@ -150,6 +156,7 @@ final class Backup {
         if (!EchoSync.connected(c, user)) throw new IOException("Primero entra en Amazon desde la app del móvil");
         String[] same = EchoSync.shared(c, user);
         if (same != null) throw new IOException(sameAccountMessage(user, same[0], same[1].equals("before")));
+        String root = EchoSync.config(c, user).getProperty("root", "");
         synchronized (Backup.class) {
             List<String> list = folders(c, user);
             if (of(c, user, rel) == null) {
@@ -158,9 +165,12 @@ final class Backup {
                 list.add(rel);
                 saveFolders(c, user, list);
             }
-            // si se iba a borrar de Amazon, ya no
+            // si se iba a borrar de Amazon, ya no (lo de otra cuenta de Amazon sí: esa copia ya no vale)
             List<String[]> rm = removals(c, user), keep = new ArrayList<String[]>();
-            for (String[] r : rm) if (!r[0].equals(rel) && !r[0].startsWith(rel + "/")) keep.add(r);
+            for (String[] r : rm) {
+                boolean here = r[1].isEmpty() || r[1].equals(root);
+                if (!here || !r[0].equals(rel) && !r[0].startsWith(rel + "/")) keep.add(r);
+            }
             if (keep.size() != rm.size()) saveRemovals(c, user, keep);
         }
         kick(c, user);
@@ -174,7 +184,26 @@ final class Backup {
      * de otra marcada (se copia entera).
      */
     static void remove(Context c, String user, String rel) throws IOException {
-        String root = EchoSync.config(c, user).getProperty("root", "");
+        remove(c, user, rel, null, true);
+    }
+
+    /**
+     * node: la carpeta de Amazon que se quiere borrar (desde «☁ Copias en Amazon»), por si en Amazon
+     * no se llama igual que en el disco. trash: borrar también de Amazon (la app de la 2.22 no lo
+     * pide: para ella «Dejar de hacer copia» solo dejaba de copiar, y así sigue).
+     */
+    static void remove(Context c, String user, String rel, String node, boolean trash) throws IOException {
+        State saved = load(c, user);
+        if (node != null) {
+            for (Map.Entry<String, String> d : saved.dirs.entrySet()) {
+                if (node.equals(d.getValue()) && !d.getKey().isEmpty()) rel = d.getKey();
+            }
+        }
+        // la cuenta de Amazon donde está la copia: la conectada, o si ya no hay, la de lo subido
+        String root = EchoSync.config(c, user).getProperty("root");
+        if (root == null) root = saved.root;
+        if (root == null) root = EchoSync.lastRoot(c, user);
+        if (root == null) root = "";
         List<String> gone = new ArrayList<String>();
         synchronized (Backup.class) {
             List<String> list = folders(c, user);
@@ -189,10 +218,12 @@ final class Backup {
                 list.removeAll(gone);
                 saveFolders(c, user, list);
             }
-            List<String[]> rm = removals(c, user), keep = new ArrayList<String[]>();
-            for (String[] r : rm) if (!r[0].equals(rel) && !r[0].startsWith(rel + "/")) keep.add(r);
-            keep.add(new String[]{rel, root});
-            saveRemovals(c, user, keep);
+            if (trash) {
+                List<String[]> rm = removals(c, user), keep = new ArrayList<String[]>();
+                for (String[] r : rm) if (!r[1].equals(root) || !r[0].equals(rel) && !r[0].startsWith(rel + "/")) keep.add(r);
+                keep.add(new String[]{rel, root, String.valueOf(System.currentTimeMillis())});
+                saveRemovals(c, user, keep);
+            }
         }
         synchronized (STATUS) {
             for (String f : gone) status(user).counts.remove(f);
@@ -200,7 +231,7 @@ final class Backup {
         kick(c, user);
     }
 
-    /** Lo que falta borrar de Amazon: {ruta, cuenta de Amazon («» si no se sabía)}. */
+    /** Lo que falta borrar de Amazon: {ruta, cuenta de Amazon («» si no se sabía), cuándo se pidió}. */
     static synchronized List<String[]> removals(Context c, String user) {
         List<String[]> out = new ArrayList<String[]>();
         File f = removalsFile(c, user);
@@ -211,7 +242,7 @@ final class Backup {
                 String l;
                 while ((l = in.readLine()) != null) {
                     String[] x = l.split("\t", -1);
-                    if (x.length == 2 && !x[0].isEmpty()) out.add(x);
+                    if (x.length == 3 && !x[0].isEmpty()) out.add(x);
                 }
             } finally {
                 in.close();
@@ -229,7 +260,7 @@ final class Backup {
         }
         Writer w = new OutputStreamWriter(new FileOutputStream(tmp), "UTF-8");
         try {
-            for (String[] r : list) w.write(r[0] + "\t" + r[1] + "\n");
+            for (String[] r : list) w.write(r[0] + "\t" + r[1] + "\t" + r[2] + "\n");
         } finally {
             w.close();
         }
@@ -443,7 +474,7 @@ final class Backup {
         s.running = true;
         s.lastRun = System.currentTimeMillis();
         Amazon a = new Amazon(cookie, p.getProperty("tld", "es"));
-        Hider hider = new Hider(s);
+        Hider hider = new Hider(s, EchoSync.nodes(c));
         try {
             EchoSync.fillAccount(c, user, p, a);
             String root = p.getProperty("root");
@@ -475,7 +506,7 @@ final class Backup {
             }
             final Store st = Config.store(c);
             if (st == null || !st.available()) return; // sin disco no se toca nada
-            checkDirs(a, state, folders);
+            checkDirs(a, state, folders, user);
             // primero se cuenta todo, para que la app enseñe cuánto falta
             Map<String, List<Item>> todo = new LinkedHashMap<String, List<Item>>();
             for (String f : folders) {
@@ -618,6 +649,7 @@ final class Backup {
      * foto o vídeo), no: se sube otra vez pidiendo una copia propia, para que esté en la carpeta.
      */
     private static boolean done(Entry e, Item it) {
+        // «e»: la usa el Echo (ver Hider): cuenta como copiada
         return e != null && e.size == it.size && !(e.hide.equals("n") && (Thumbs.isImage(it.name) || Thumbs.isVideo(it.name)));
     }
 
@@ -625,13 +657,21 @@ final class Backup {
      * Si alguien ha borrado en la web de Amazon Fotos la carpeta de una marcada (o «Súbelo Backup»
      * entera), lo de dentro se vuelve a subir: sigue marcada, así que tiene que estar en Amazon.
      */
-    private static void checkDirs(Amazon a, State state, List<String> folders) throws IOException {
+    private static void checkDirs(Amazon a, State state, List<String> folders, String user) throws IOException {
+        // las carpetas marcadas, en cada repaso; sus subcarpetas, una vez al día
+        long now = System.currentTimeMillis();
+        boolean all;
+        synchronized (STATUS) {
+            Long last = FULL_CHECK.get(user);
+            all = last == null || now - last > DAY_MS;
+            if (all) FULL_CHECK.put(user, now);
+        }
         List<String> check = new ArrayList<String>();
-        check.add("");
-        check.addAll(folders);
+        for (String d : state.dirs.keySet()) if (d.isEmpty() || (all ? covered(folders, d) : folders.contains(d))) check.add(d);
+        java.util.Collections.sort(check); // antes la de fuera que las de dentro
         for (String f : check) {
             String id = state.dirs.get(f);
-            if (id == null) continue;
+            if (id == null) continue; // ya olvidada con la de fuera
             JSONObject n = a.nodeIfMine(id);
             if (n != null && !"TRASH".equals(n.optString("status"))) continue;
             if (f.isEmpty()) {
@@ -664,23 +704,52 @@ final class Backup {
             if (EchoSync.gen(null) != gen) throw new EchoSync.AccountChanged();
             String rel = r[0];
             List<String> marked = folders(c, user);
-            // otra cuenta de Amazon (lo de aquella no se ve con esta), o la han vuelto a marcar: nada
-            if (!covered(marked, rel) && (r[1].isEmpty() || r[1].equals(state.root))) {
-                s.current = "Borrando de Amazon «" + rel + "»";
-                try {
-                    trashFolder(a, p, state, user, rel, marked, gen);
-                } catch (EchoSync.AccountChanged e) {
-                    throw e;
-                } catch (Amazon.AmazonException e) {
-                    if (e.code == 401) throw e;
-                    err = "No he podido borrar «" + rel + "» de Amazon (" + e.getMessage() + "). Lo vuelvo a intentar en el siguiente repaso.";
-                    continue;
-                } catch (IOException e) {
-                    err = "No he podido borrar «" + rel + "» de Amazon (" + e.getMessage() + "). Lo vuelvo a intentar en el siguiente repaso.";
+            boolean own = r[1].isEmpty() || r[1].equals(state.root);
+            if (own && covered(marked, rel)) { // la han vuelto a marcar
+                removalDone(c, user, r);
+                continue;
+            }
+            Amazon x = a;
+            Properties xp = p;
+            State xs = state;
+            if (!own) {
+                // la copia se quedó en otra cuenta de Amazon (p. ej. la que compartía con el otro y se
+                // ha cambiado a la suya): se borra con la sesión de quien la siga teniendo conectada
+                String[] other = EchoSync.sessionFor(c, r[1], user);
+                if (other == null) {
+                    long since;
+                    try {
+                        since = Long.parseLong(r[2]);
+                    } catch (NumberFormatException e) {
+                        since = 0;
+                    }
+                    if (System.currentTimeMillis() - since > GIVE_UP_MS) {
+                        removalDone(c, user, r); // ni se vuelve a esa cuenta: se deja estar
+                    } else {
+                        err = "«" + rel + "» sigue copiada en la otra cuenta de Amazon con la que entraste. Para borrarla, "
+                                + "vuelve a entrar con esa cuenta un momento.";
+                    }
                     continue;
                 }
-                forget(state, rel, marked); // si la vuelven a marcar mientras, se sube de nuevo
-                save(c, user, state);
+                x = new Amazon(other[1], other[2]);
+                xp = new Properties();
+                xp.setProperty("root", r[1]);
+                xs = new State();
+                xs.root = r[1];
+                marked = new ArrayList<String>(); // lo marcado ahora es de la otra cuenta
+            }
+            s.current = "Borrando de Amazon «" + rel + "»";
+            try {
+                if (!trashFolder(c, user, x, xp, xs, own, r, marked, gen)) continue;
+            } catch (EchoSync.AccountChanged e) {
+                throw e;
+            } catch (Amazon.AmazonException e) {
+                if (e.code == 401 && own) throw e;
+                err = "No he podido borrar «" + rel + "» de Amazon (" + e.getMessage() + "). Lo vuelvo a intentar en el siguiente repaso.";
+                continue;
+            } catch (IOException e) {
+                err = "No he podido borrar «" + rel + "» de Amazon (" + e.getMessage() + "). Lo vuelvo a intentar en el siguiente repaso.";
+                continue;
             }
             removalDone(c, user, r);
         }
@@ -688,44 +757,79 @@ final class Backup {
         s.current = null;
     }
 
+    /** ¿Sigue haciendo falta? (puede que la hayan vuelto a marcar mientras se miraba qué hay) */
+    private static boolean stillWanted(Context c, String user, String[] r, boolean own) {
+        if (own && covered(folders(c, user), r[0])) return false;
+        for (String[] x : removals(c, user)) if (x[0].equals(r[0]) && x[1].equals(r[1])) return true;
+        return false;
+    }
+
     /** Una carpeta de Amazon, con lo que hay dentro. */
     private static final class Dir {
         String id;
         final List<String> files = new ArrayList<String>();
         final List<Dir> subs = new ArrayList<Dir>();
-        /** Dentro hay algo que sigue marcado: esta carpeta no se puede llevar entera. */
+        /** Dentro hay algo que no se puede borrar: esta carpeta no se puede llevar entera. */
         boolean keeps;
+        /** Amazon no ha dejado ver todo lo de dentro (más de 9800): hace falta otra vuelta. */
+        boolean capped;
     }
 
     /**
      * Lleva a la papelera de Amazon lo que hay en «Súbelo Backup/usuario/rel», menos lo que siga
-     * marcado. Primero los archivos y luego las carpetas (por si Amazon no se llevara lo de dentro).
+     * marcado y lo que use el Echo. Primero los archivos y luego las carpetas (por si Amazon no se
+     * llevara lo de dentro). Devuelve false si al final ya no hacía falta.
      */
-    private static void trashFolder(Amazon a, Properties p, State state, String user, String rel, List<String> marked, int gen)
-            throws IOException {
+    private static boolean trashFolder(Context c, String user, Amazon a, Properties p, State state, boolean own, String[] r,
+                                       List<String> marked, int gen) throws IOException {
+        String rel = r[0];
         String id = findDir(a, p, state, user, rel);
-        if (id == null) return; // en Amazon no hay nada
+        if (id == null) { // en Amazon no hay nada
+            if (own) {
+                forget(state, rel, marked);
+                save(c, user, state);
+            }
+            return true;
+        }
         // lo que el estado dice que es de carpetas aún marcadas no se toca nunca (aunque se llame igual)
-        Set<String> keep = new HashSet<String>();
+        Set<String> keep = new HashSet<String>(EchoSync.nodes(c));
         for (Map.Entry<String, String> d : state.dirs.entrySet()) {
             if (covered(marked, d.getKey()) || holdsMarked(marked, d.getKey())) keep.add(d.getValue());
         }
         for (Map.Entry<String, Entry> f : state.files.entrySet()) {
             if (covered(marked, dirOf(f.getKey()))) keep.add(f.getValue().node);
         }
-        Dir top = scan(a, id, rel, marked, keep, 0);
-        List<String> files = new ArrayList<String>(), dirs = new ArrayList<String>();
-        plan(top, files, dirs);
-        if (EchoSync.gen(null) != gen) throw new EchoSync.AccountChanged();
-        a.trash(files);
+        List<String> dirs = new ArrayList<String>();
+        String lastFile = null;
+        for (int round = 0; round < 5; round++) {
+            Dir top = scan(a, id, rel, marked, keep, 0);
+            List<String> files = new ArrayList<String>();
+            dirs = new ArrayList<String>();
+            plan(top, files, dirs);
+            if (round == 0) {
+                if (!stillWanted(c, user, r, own)) return false;
+                if (own) {
+                    // se olvida antes de borrar nada: si se queda a medias y la vuelven a marcar, se sube de nuevo
+                    forget(state, rel, marked);
+                    save(c, user, state);
+                }
+            }
+            if (EchoSync.gen(null) != gen) throw new EchoSync.AccountChanged();
+            if (!files.isEmpty()) {
+                a.trash(files);
+                lastFile = files.get(files.size() - 1);
+            }
+            if (!top.capped) break;
+        }
         a.trash(dirs);
         // Amazon no dice qué ha hecho: se mira que de verdad estén en la papelera
         List<String> check = new ArrayList<String>(dirs);
-        if (!files.isEmpty()) check.add(files.get(files.size() - 1));
+        if (lastFile != null) check.add(lastFile);
         for (String x : check) {
             JSONObject n = a.nodeIfMine(x);
             if (n != null && !"TRASH".equals(n.optString("status"))) throw new IOException("Amazon no lo ha llevado a la papelera");
         }
+        return true;
     }
 
     private static Dir scan(Amazon a, String id, String path, List<String> marked, Set<String> keep, int depth) throws IOException {
@@ -736,8 +840,13 @@ final class Backup {
             d.keeps = true; // tan adentro no se mira: no se toca
             return d;
         }
-        for (JSONObject ch : a.children(id)) {
+        List<JSONObject> kids = a.children(id);
+        d.capped = kids.size() >= 9800;
+        for (JSONObject ch : kids) {
             String cid = ch.optString("id");
+            JSONArray parents = ch.optJSONArray("parents");
+            // por si Amazon no hiciera caso del filtro: solo lo que de verdad está en esta carpeta
+            if (parents != null && parents.length() > 0 && !Amazon.hasParent(ch, id)) continue;
             if ("FOLDER".equals(ch.optString("kind"))) {
                 String sub = path + "/" + ch.optString("name");
                 if (keep.contains(cid) || covered(marked, sub)) {
@@ -746,9 +855,10 @@ final class Backup {
                 }
                 Dir x = scan(a, cid, sub, marked, keep, depth + 1);
                 if (x.keeps) d.keeps = true;
+                if (x.capped) d.capped = true;
                 d.subs.add(x);
-            } else if (keep.contains(cid)) {
-                d.keeps = true;
+            } else if (keep.contains(cid) || (parents != null && parents.length() > 1)) {
+                d.keeps = true; // la usa el Echo, sigue marcada, o también está en otro sitio: no se toca
             } else {
                 d.files.add(cid);
             }
@@ -850,12 +960,15 @@ final class Backup {
      */
     private static final class Hider {
         private final Status s;
+        /** Las fotos que usa el Echo: esas se tienen que ver. */
+        private final Set<String> echo;
         private int failsInRow, ok;
         private final List<Entry> failed = new ArrayList<Entry>();
         boolean anyFailed;
 
-        Hider(Status s) {
+        Hider(Status s, Set<String> echo) {
             this.s = s;
+            this.echo = echo;
         }
 
         void hide(Amazon a, State st, String key, Entry e) throws IOException {
@@ -881,6 +994,11 @@ final class Backup {
                         return;
                     }
                     e.hide = "";
+                }
+                if (echo.contains(e.node)) {
+                    // es de la copia, pero el Echo usa esta misma (Amazon ya la tenía): se tiene que ver
+                    e.hide = "e";
+                    return;
                 }
                 a.hide(e.node);
                 e.hide = "h";
@@ -924,7 +1042,7 @@ final class Backup {
                 if (ok > 0) st.broken = false;
                 return;
             }
-            boolean works = (ok > 0 && failsInRow < 3) || probe(a, st);
+            boolean works = (ok > 0 && failsInRow < 3) || probe(a, st, echo);
             if (works) {
                 for (Entry e : failed) {
                     if (!e.hide.equals("?")) e.hide = e.hide.equals("1") ? "2" : e.hide.equals("2") ? "x" : "1";
@@ -938,9 +1056,9 @@ final class Backup {
         }
 
         /** ¿Deja Amazon ocultar? Se prueba con una ya oculta (no cambia nada). */
-        private static boolean probe(Amazon a, State st) throws IOException {
+        private static boolean probe(Amazon a, State st, Set<String> echo) throws IOException {
             for (Entry e : st.files.values()) {
-                if (!e.hide.equals("h")) continue;
+                if (!e.hide.equals("h") || echo.contains(e.node)) continue;
                 try {
                     a.hide(e.node);
                     return true;

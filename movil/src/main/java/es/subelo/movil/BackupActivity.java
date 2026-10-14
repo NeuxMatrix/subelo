@@ -533,7 +533,7 @@ public class BackupActivity extends Activity {
             public void run() {
                 String err = null;
                 try {
-                    BoxClient.connect(BackupActivity.this).backupRemove(rel);
+                    BoxClient.connect(BackupActivity.this).backupRemove(rel, n.id);
                 } catch (BoxClient.BoxException e) {
                     err = e.getMessage();
                 } catch (IOException e) {

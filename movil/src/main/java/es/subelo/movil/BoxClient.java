@@ -548,10 +548,15 @@ final class BoxClient {
         return form("/api/backup/add", f);
     }
 
-    /** Deja de copiar la carpeta y el box borra de Amazon lo copiado (también si ya no estaba marcada). */
-    JSONObject backupRemove(String path) throws IOException {
+    /**
+     * Deja de copiar la carpeta y el box borra de Amazon lo copiado (también si ya no estaba marcada).
+     * node: la carpeta de Amazon, si se sabe (desde «☁ Copias en Amazon»).
+     */
+    JSONObject backupRemove(String path, String node) throws IOException {
         List<String[]> f = new ArrayList<String[]>();
         f.add(new String[]{"path", path});
+        f.add(new String[]{"trash", "1"});
+        if (node != null) f.add(new String[]{"node", node});
         JSONObject o = form("/api/backup/remove", f);
         if (!o.has("removing")) { // hasta la 2.22 solo se dejaba de copiar
             throw new BoxException(404, "Ya no se copia, pero el box tiene una versión antigua y no lo borra de Amazon. "
