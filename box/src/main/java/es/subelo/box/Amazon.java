@@ -144,21 +144,93 @@ final class Amazon {
 
     /** Carpeta de Amazon Drive donde dejamos las fotos (la crea si no está). */
     String folder(String parentId, String name) throws IOException {
-        try {
-            JSONObject body = new JSONObject();
-            body.put("kind", "FOLDER");
-            body.put("name", name);
-            body.put("parents", new JSONArray().put(parentId));
-            body.put("resourceVersion", "V2");
-            body.put("ContentType", "JSON");
-            Resp r = request("POST", drive + "/nodes", "application/json", body.toString().getBytes("UTF-8"), null, -1);
-            if (r.code == 409 || r.code / 100 == 2) {
-                String id = nodeId(r.json());
-                if (id != null) return id;
+        String tryName = name;
+        for (int attempt = 1; attempt <= 5; attempt++) {
+            try {
+                JSONObject body = new JSONObject();
+                body.put("kind", "FOLDER");
+                body.put("name", tryName);
+                body.put("parents", new JSONArray().put(parentId));
+                body.put("resourceVersion", "V2");
+                body.put("ContentType", "JSON");
+                Resp r = request("POST", drive + "/nodes", "application/json", body.toString().getBytes("UTF-8"), null, -1);
+                String id = r.code == 409 || r.code / 100 == 2 ? nodeId(r.json()) : null;
+                if (id == null) throw fail(r);
+                if (r.code / 100 == 2) return id;
+                // ya había una con ese nombre: vale, salvo si es una que está en la papelera
+                JSONObject n = nodeIfMine(id);
+                if (n != null && !"TRASH".equals(n.optString("status"))) return id;
+                tryName = name + " (" + (attempt + 1) + ")";
+            } catch (JSONException e) {
+                throw new IOException(e.getMessage());
             }
-            throw fail(r);
-        } catch (JSONException e) {
-            throw new IOException(e.getMessage());
+        }
+        throw new IOException("Amazon no deja crear la carpeta " + name);
+    }
+
+    /**
+     * Lo que hay dentro de una carpeta (sin lo que está en la papelera): carpetas y archivos, tal
+     * como los da Amazon. Páginas de 200, con «startToken» si Amazon lo da y si no con «offset».
+     */
+    List<JSONObject> children(String parentId) throws IOException {
+        List<JSONObject> out = new ArrayList<JSONObject>();
+        String token = null;
+        boolean byOffset = false, byFilter = false;
+        for (int page = 0; page < 200; page++) {
+            String url = drive + "/nodes/" + enc(parentId) + "/children?asset=NONE&tempLink=false&limit=200"
+                    + "&filters=" + enc("status:AVAILABLE")
+                    + (byOffset ? "&offset=" + out.size() : token == null ? "" : "&startToken=" + enc(token)) + "&" + V2;
+            String filtered = drive + "/nodes?filters=" + enc("parents:" + parentId + " AND status:AVAILABLE")
+                    + "&asset=NONE&tempLink=false&limit=200" + (byOffset ? "&offset=" + out.size() : "") + "&" + V2;
+            JSONObject o;
+            if (byFilter) {
+                o = json("GET", filtered, null);
+            } else {
+                try {
+                    o = json("GET", url, null);
+                } catch (AmazonException e) {
+                    if (e.code == 401 || page > 0) throw e;
+                    // por si esta versión de la web no tiene «/children»: lo mismo con un filtro
+                    byFilter = true;
+                    o = json("GET", filtered, null);
+                }
+            }
+            JSONArray a = o.optJSONArray("data");
+            int got = a == null ? 0 : a.length();
+            for (int i = 0; a != null && i < a.length(); i++) {
+                JSONObject x = a.optJSONObject(i);
+                if (x == null || x.optString("id").isEmpty() || "TRASH".equals(x.optString("status"))) continue;
+                out.add(x);
+            }
+            token = o.optString("nextToken", "");
+            if (!token.isEmpty() && !byOffset && !byFilter) continue;
+            int total = o.optInt("count", -1);
+            if (got < 200 || (total >= 0 && out.size() >= total) || out.size() >= 9800) break;
+            byOffset = true;
+        }
+        return out;
+    }
+
+    /**
+     * Lleva a la papelera de Amazon Fotos (de ahí se borra sola a los 90 días). Una carpeta se
+     * lleva con todo lo que tiene dentro.
+     */
+    void trash(List<String> ids) throws IOException {
+        for (int from = 0; from < ids.size(); from += 50) {
+            try {
+                JSONObject body = new JSONObject();
+                body.put("recurse", "true");
+                body.put("op", "add");
+                body.put("filters", "");
+                body.put("conflictResolution", "RENAME");
+                body.put("value", new JSONArray(ids.subList(from, Math.min(ids.size(), from + 50))));
+                body.put("resourceVersion", "V2");
+                body.put("ContentType", "JSON");
+                Resp r = request("PATCH", drive + "/trash", "application/json", body.toString().getBytes("UTF-8"), null, -1);
+                if (r.code / 100 != 2) throw fail(r);
+            } catch (JSONException e) {
+                throw new IOException(e.getMessage());
+            }
         }
     }
 
@@ -182,16 +254,35 @@ final class Amazon {
     }
 
     Uploaded uploadNode(String parentId, String name, Opener data, long size) throws IOException {
+        return uploadNode(parentId, name, data, size, false);
+    }
+
+    /** Amazon no admite «suppress=deduplication»: ya no se pide (hasta que se reinicie el box). */
+    private static volatile boolean noCopies;
+
+    /**
+     * copy: que la suba aunque la misma foto ya esté en otra carpeta de la cuenta (para la copia de
+     * seguridad: si no, Amazon la deja donde estaba y no entra en la carpeta).
+     */
+    Uploaded uploadNode(String parentId, String name, Opener data, long size, boolean copy) throws IOException {
         String tryName = name;
+        boolean plain = false;
         for (int attempt = 1; attempt <= 5; attempt++) {
+            boolean suppress = copy && !noCopies && !plain;
             InputStream in = data.open();
             Resp r;
             try {
-                r = request("POST", upload + "?name=" + enc(tryName) + "&kind=FILE&parentNodeId=" + enc(parentId),
-                        "application/octet-stream", null, in, size);
+                r = request("POST", upload + "?name=" + enc(tryName) + "&kind=FILE&parentNodeId=" + enc(parentId)
+                        + (suppress ? "&suppress=deduplication" : ""), "application/octet-stream", null, in, size);
             } finally {
                 in.close();
             }
+            if (suppress && r.code == 400) { // ¿no lo entiende? se prueba como siempre
+                plain = true;
+                attempt--;
+                continue;
+            }
+            if (plain && r.code != 400) noCopies = true; // así sí: no lo entiende
             if (r.code / 100 == 2) {
                 String id = nodeId(r.json());
                 if (id == null) throw new IOException("Amazon no ha devuelto el identificador de " + name);

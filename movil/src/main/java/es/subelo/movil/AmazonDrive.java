@@ -21,7 +21,8 @@ import java.util.Locale;
 
 /**
  * Amazon Fotos directamente desde el móvil (sin el box), con la sesión guardada en AmazonSession:
- * para ver fuera de casa las carpetas con copia de seguridad. Solo lee: no sube ni borra nada.
+ * para ver fuera de casa las carpetas con copia de seguridad. Solo lee: no sube nada, y borrar lo
+ * hace el box (BoxClient.backupRemove).
  * Son las mismas llamadas que hace la web de Amazon Fotos (no hay API oficial).
  */
 final class AmazonDrive {

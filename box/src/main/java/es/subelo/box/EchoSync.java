@@ -220,7 +220,7 @@ final class EchoSync {
     }
 
     /**
-     * Las conexiones de antes de la 2.21 no guardaban de qué cuenta de Amazon eran: se averigua
+     * Las conexiones de antes de la 2.22 no guardaban de qué cuenta de Amazon eran: se averigua
      * con la sesión y se apunta (sin eso no se sabría si Fer y Julss comparten cuenta).
      */
     static void fillAccount(Context c, String user, Properties p, Amazon a) throws IOException {
@@ -240,7 +240,7 @@ final class EchoSync {
 
     /**
      * La primera vez en cada arranque: apunta en el historial las cuentas ya conectadas (las de
-     * antes de la 2.21 no se apuntaban), para que «antes» las tenga en cuenta.
+     * antes de la 2.22 no se apuntaban), para que «antes» las tenga en cuenta.
      */
     private static synchronized void seed(Context c) {
         if (seeded) return;

@@ -44,6 +44,7 @@ import java.util.concurrent.Executors;
 /**
  * «☁ Copias en Amazon»: las carpetas con copia de seguridad, vistas directamente desde Amazon
  * Fotos (sirve fuera de casa, sin el box). Pide siempre la contraseña de Súbelo al entrar.
+ * Una carpeta se puede borrar de Amazon manteniéndola pulsada: eso lo hace el box (en casa).
  */
 public class BackupActivity extends Activity {
     private static final int REQ_LOGIN = 1;
@@ -137,6 +138,19 @@ public class BackupActivity extends Activity {
                 } else {
                     open(n);
                 }
+            }
+        });
+        grid.setOnItemLongClickListener(new AdapterView.OnItemLongClickListener() {
+            @Override
+            public boolean onItemLongClick(AdapterView<?> parent, View view, int pos, long id) {
+                AmazonDrive.Node n = entries.get(pos);
+                if (n.folder) {
+                    confirmDelete(n);
+                } else {
+                    Toast.makeText(BackupActivity.this, "Se borran carpetas enteras: mantén pulsada la carpeta",
+                            Toast.LENGTH_LONG).show();
+                }
+                return true;
             }
         });
         col.addView(grid, new LinearLayout.LayoutParams(-1, 0, 1));
@@ -477,9 +491,66 @@ public class BackupActivity extends Activity {
                             if (!n.folder && (n.isImage() || n.isVideo())) media.add(n);
                         }
                         if (l.isEmpty()) infoText.setText("Carpeta vacía (o aún subiéndose desde el box).");
-                        else if (stack.size() == 1) infoText.setText("Tus carpetas con copia. Toca una para verla.");
+                        else if (stack.size() == 1) infoText.setText("Tus carpetas con copia. Toca una para verla; "
+                                + "mantenla pulsada para borrarla de Amazon.");
                         else infoText.setText(files == 1 ? "1 archivo" : files + " archivos");
                         adapter.notifyDataSetChanged();
+                    }
+                });
+            }
+        });
+    }
+
+    // ---------- borrar de Amazon ----------
+
+    /** La ruta de una carpeta de aquí dentro de la de copias del usuario (la misma que en el disco). */
+    private String pathOf(AmazonDrive.Node n) {
+        StringBuilder p = new StringBuilder();
+        for (int i = 1; i < stack.size(); i++) p.append(stack.get(i).name).append('/');
+        return p.append(n.name).toString();
+    }
+
+    private void confirmDelete(final AmazonDrive.Node n) {
+        final String rel = pathOf(n);
+        new AlertDialog.Builder(this)
+                .setTitle("¿Borrar «" + n.name + "» de Amazon?")
+                .setMessage("Se borra de Amazon Fotos con todo lo que tiene dentro: va a su papelera, donde se puede "
+                        + "recuperar durante 90 días. Si esta carpeta tiene copia, deja de copiarse. En el disco del box "
+                        + "no se toca nada.\n\nLo borra el box, así que tienes que estar en casa, con el Wi-Fi.")
+                .setPositiveButton("Borrar de Amazon", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface d, int w) {
+                        delete(n, rel);
+                    }
+                })
+                .setNegativeButton("Cancelar", null)
+                .show();
+    }
+
+    private void delete(final AmazonDrive.Node n, final String rel) {
+        bg.execute(new Runnable() {
+            @Override
+            public void run() {
+                String err = null;
+                try {
+                    BoxClient.connect(BackupActivity.this).backupRemove(rel);
+                } catch (BoxClient.BoxException e) {
+                    err = e.getMessage();
+                } catch (IOException e) {
+                    err = "No encuentro el box: para borrar de Amazon tienes que estar en casa, con el Wi-Fi.";
+                }
+                final String error = err;
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (isFinishing() || !unlocked) return;
+                        if (error != null) {
+                            Toast.makeText(BackupActivity.this, "✖ " + error, Toast.LENGTH_LONG).show();
+                            return;
+                        }
+                        Toast.makeText(BackupActivity.this, "Borrando «" + n.name + "» de Amazon. Tarda un poco.",
+                                Toast.LENGTH_LONG).show();
+                        if (entries.remove(n)) adapter.notifyDataSetChanged();
                     }
                 });
             }
@@ -700,6 +771,16 @@ public class BackupActivity extends Activity {
 
     private int dp(float v) {
         return Brutal.dp(this, v);
+    }
+
+    /** ¿El box está borrando de Amazon lo que se copió de esta carpeta? */
+    static boolean removing(JSONObject status, String rel) {
+        JSONArray a = status == null ? null : status.optJSONArray("removing");
+        for (int i = 0; a != null && i < a.length(); i++) {
+            String p = a.optString(i);
+            if (rel.equals(p) || rel.startsWith(p + "/")) return true;
+        }
+        return false;
     }
 
     /** Lista de carpetas con copia que da el box (para el diálogo de «Mis fotos»). */

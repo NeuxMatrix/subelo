@@ -79,7 +79,7 @@ import javax.net.ssl.SSLSocketFactory;
  *                            sabe entrar (se le cambió la contraseña): vuelven las copias de seguridad
  * GET  /api/backup           copia en Amazon Fotos (Backup): carpetas marcadas y cuánto llevan subido
  * POST /api/backup/add       path=: hacer backup de esa carpeta (con sus subcarpetas) en Amazon
- * POST /api/backup/remove    path=: dejar de hacerlo (lo que ya está en Amazon se queda)
+ * POST /api/backup/remove    path=: dejar de hacerlo y borrar de Amazon lo copiado (a su papelera)
  * POST /api/backup/sync      repasar ya
  * GET  /api/google           traer de Google Fotos (GoogleImport): ¿configurado?, clientId y la importación en curso
  * POST /api/google/setup     client=&secret=: el cliente OAuth de Google Cloud;  POST /api/google/reset: olvidarlo
@@ -880,7 +880,12 @@ final class HttpServer {
                 return;
             }
         } else {
-            Backup.remove(ctx, user, rel);
+            try {
+                Backup.remove(ctx, user, rel);
+            } catch (IOException e) {
+                error(out, 409, e.getMessage()); // está dentro de otra marcada
+                return;
+            }
         }
         json(out, 200, Backup.statusJson(ctx, user));
     }

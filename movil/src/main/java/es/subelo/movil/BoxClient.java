@@ -548,10 +548,16 @@ final class BoxClient {
         return form("/api/backup/add", f);
     }
 
+    /** Deja de copiar la carpeta y el box borra de Amazon lo copiado (también si ya no estaba marcada). */
     JSONObject backupRemove(String path) throws IOException {
         List<String[]> f = new ArrayList<String[]>();
         f.add(new String[]{"path", path});
-        return form("/api/backup/remove", f);
+        JSONObject o = form("/api/backup/remove", f);
+        if (!o.has("removing")) { // hasta la 2.22 solo se dejaba de copiar
+            throw new BoxException(404, "Ya no se copia, pero el box tiene una versión antigua y no lo borra de Amazon. "
+                    + "En la tele abre «Súbelo Servidor», pulsa «Buscar actualizaciones» e instala la nueva.");
+        }
+        return o;
     }
 
     /** Copia fotos de una carpeta a la carpeta «Echo» (el box las añade al álbum). */
