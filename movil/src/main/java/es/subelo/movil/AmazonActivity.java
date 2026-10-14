@@ -337,7 +337,7 @@ public class AmazonActivity extends Activity {
                 + (pending > 0 ? " · " + pending + " POR ENVIAR" : "")
                 + (total >= 0 && total > in + pending ? " · " + (total - in - pending) + " SIN ENVIAR" : "")
                 + (ok > 0 ? "\nÚLTIMO REPASO: " + DateFormat.getTimeInstance(DateFormat.SHORT).format(new Date(ok)) : ""));
-        if (!o.isNull("sameAs")) err = (err == null ? "" : err + "\n\n") + sameAccountText(o.optString("sameAs"), o.optBoolean("sameBefore"));
+        if (!o.isNull("sameAs")) err = (err == null ? "" : err + "\n\n") + sameAccountText(Prefs.user(this), o.optString("sameAs"), o.optBoolean("sameBefore"));
         errorText.setText(err == null || expired ? "" : "✖ " + err);
         errorText.setVisibility(err == null || expired ? View.GONE : View.VISIBLE);
         boolean shared = connected && !o.isNull("sameAs");
@@ -518,7 +518,8 @@ public class AmazonActivity extends Activity {
                             setResult(RESULT_OK);
                             if (res != null && !res.isNull("sameAs")) {
                                 new AlertDialog.Builder(AmazonActivity.this)
-                                        .setMessage(sameAccountText(res.optString("sameAs"), res.optBoolean("sameBefore")))
+                                        .setMessage(sameAccountText(Prefs.user(AmazonActivity.this), res.optString("sameAs"),
+                                                res.optBoolean("sameBefore")))
                                         .setPositiveButton("Vale", null)
                                         .setOnDismissListener(new DialogInterface.OnDismissListener() {
                                             @Override
@@ -666,16 +667,20 @@ public class AmazonActivity extends Activity {
     }
 
     /** Aviso de que los dos usuarios de Súbelo han entrado con la misma cuenta de Amazon. */
-    static String sameAccountText(String other, boolean before) {
+    static String sameAccountText(String me, String other, boolean before) {
         if (before) {
             return "🔒 " + other + " entró en Súbelo con esta misma cuenta de Amazon, así que sabe entrar en ella y "
                     + "vería tus copias (Amazon Fotos no tiene perfiles). Súbelo no hace copias de seguridad así (el Echo "
                     + "sí sigue funcionando).\n\nSi la cuenta es tuya, cámbiale la contraseña en Amazon y luego, en la "
-                    + "carpeta, pulsa ☁ › «" + other + " ya no puede entrar». Si no, entra con tu propia cuenta.";
+                    + "carpeta, pulsa ☁ › «" + other + " ya no puede entrar». Si no es tuya, pulsa antes ☁ › «Dejar de "
+                    + "hacer copia» en cada carpeta copiada (se borra de esta cuenta) y luego entra con tu propia cuenta.";
         }
         return "🔒 Esta cuenta de Amazon es la misma que tiene conectada " + other + ". Amazon Fotos no tiene perfiles: "
                 + "con una sola cuenta, cada uno vería las fotos del otro, así que Súbelo no hace copias de seguridad "
-                + "así (el Echo sí sigue funcionando).\n\nPara las copias, cada uno con su propia cuenta de Amazon "
+                + "así (el Echo sí sigue funcionando).\n\nLo que ya se copió en esta cuenta sigue en ella, en «Súbelo "
+                + "Backup/" + me + "». Si no quieres que " + other + " lo vea, antes de cambiar de cuenta pulsa ☁ › «Dejar "
+                + "de hacer copia» en cada carpeta copiada y espera a que se borre de Amazon. Si cambias antes, ya solo "
+                + "se puede borrar en la web de Amazon Fotos.\n\nPara las copias, cada uno con su propia cuenta de Amazon "
                 + "(«Entrar con otra cuenta de Amazon»). Para que las dos tengan fotos ilimitadas, quien tenga Prime "
                 + "puede invitar a la otra a su «Archivo familiar» desde Amazon Fotos; dejad apagado «añadir subidas "
                 + "al Archivo familiar».";

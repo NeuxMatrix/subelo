@@ -301,17 +301,19 @@ final class Amazon {
             JSONObject node = node(existing);
             JSONObject cp = node == null ? null : node.optJSONObject("contentProperties");
             boolean trashed = node != null && "TRASH".equals(node.optString("status"));
-            if (trashed && !hasParent(node, parentId)) {
+            boolean same = cp != null && cp.optLong("size", -1) == size;
+            if (trashed && !suppress && !noCopies && !fresh) {
                 // Amazon dice que ya la tiene, pero en la papelera: esa no vale (se borra sola). Se pide otra
-                if (!suppress && !noCopies && !fresh) {
-                    fresh = true;
-                    attempt--;
-                    continue;
-                }
+                fresh = true;
+                attempt--;
+                continue;
+            }
+            // en la papelera y sin poder pedir otra: con otro nombre volvería a decir lo mismo
+            if (trashed && (!hasParent(node, parentId) || same && !suppress)) {
                 throw new InTrash("Amazon tiene " + name + " en la papelera y no deja subirla otra vez: sácala de la "
                         + "papelera de Amazon Fotos, o vacíala");
             }
-            if (!trashed && cp != null && cp.optLong("size", -1) == size) { // la misma foto ya estaba
+            if (!trashed && same) { // la misma foto ya estaba
                 return new Uploaded(existing, hasParent(node, parentId));
             }
             int dot = name.lastIndexOf('.');

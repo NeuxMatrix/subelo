@@ -612,7 +612,13 @@ final class EchoSync {
                         try {
                             a.setHidden(up.id, false);
                         } catch (Amazon.AmazonException ex) {
-                            if (ex.code == 401) throw ex;
+                            if (ex.code == 401) {
+                                n.size = -1; // para volver a mostrarla en el siguiente repaso
+                                throw ex;
+                            }
+                        } catch (IOException ex) {
+                            n.size = -1;
+                            throw ex;
                         }
                     }
                     toAdd.add(up.id);
