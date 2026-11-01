@@ -65,6 +65,10 @@ Android pide confirmar la instalación (y la primera vez, permitir «instalar ap
 
 Secretos del repositorio (Settings › Secrets and variables › Actions): `KEYSTORE_B64` (el contenido de `firma/KEYSTORE_B64.txt`) y `KEYSTORE_PASS` (la contraseña de la firma).
 
+## Ver las fotos en la tele
+
+En la app del box, **«🖼 Ver fotos en la tele»**: eliges quién eres y escribes tu contraseña (la misma del móvil; hay que haberla puesto antes desde el móvil). Sale tu carpeta en cuadrícula: OK abre, Atrás vuelve. En una foto, ◀ ▶ pasan y OK pone o quita el pase de diapositivas (6 s). Por ahora solo fotos, no vídeos.
+
 ## Súbelo en otra casa (otros nombres)
 
 Las mismas apps sirven para otra casa: cada box es independiente (sus usuarios, contraseñas, certificado, Amazon y Google se guardan en ese box) y el móvil solo busca el box en su propia wifi. Las dos casas se actualizan igual, desde las mismas releases.

@@ -98,6 +98,40 @@ final class Thumbs {
         o2.inSampleSize = sample;
         Bitmap b = decode(st, dir, name, o2);
         if (b == null) return null;
+        return scale(b, rotation(st, dir, name));
+    }
+
+    /**
+     * Foto para verla en la tele: reducida para que quepa en w×h (sin pasarse de memoria) y girada
+     * según su EXIF. null si no se puede.
+     */
+    static Bitmap full(Store st, Object dir, String name, int w, int h) throws IOException {
+        BitmapFactory.Options o = new BitmapFactory.Options();
+        o.inJustDecodeBounds = true;
+        decode(st, dir, name, o);
+        if (o.outWidth <= 0 || o.outHeight <= 0) return null;
+        int rot = rotation(st, dir, name);
+        int iw = rot % 180 == 0 ? o.outWidth : o.outHeight, ih = rot % 180 == 0 ? o.outHeight : o.outWidth;
+        int sample = 1;
+        while (iw / (sample * 2) >= w || ih / (sample * 2) >= h) sample *= 2;
+        BitmapFactory.Options o2 = new BitmapFactory.Options();
+        o2.inSampleSize = sample;
+        Bitmap b;
+        try {
+            b = decode(st, dir, name, o2);
+        } catch (OutOfMemoryError e) {
+            o2.inSampleSize = sample * 2;
+            b = decode(st, dir, name, o2);
+        }
+        if (b == null || rot == 0) return b;
+        Matrix m = new Matrix();
+        m.postRotate(rot);
+        Bitmap out = Bitmap.createBitmap(b, 0, 0, b.getWidth(), b.getHeight(), m, true);
+        if (out != b) b.recycle();
+        return out;
+    }
+
+    private static int rotation(Store st, Object dir, String name) throws IOException {
         int rotation = 0;
         if (Build.VERSION.SDK_INT >= 24) {
             Store.Readable r = st.read(dir, name);
@@ -118,7 +152,7 @@ final class Thumbs {
                 }
             }
         }
-        return scale(b, rotation);
+        return rotation;
     }
 
     private static Bitmap decode(Store st, Object dir, String name, BitmapFactory.Options o) throws IOException {
