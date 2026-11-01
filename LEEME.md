@@ -65,6 +65,12 @@ Android pide confirmar la instalación (y la primera vez, permitir «instalar ap
 
 Secretos del repositorio (Settings › Secrets and variables › Actions): `KEYSTORE_B64` (el contenido de `firma/KEYSTORE_B64.txt`) y `KEYSTORE_PASS` (la contraseña de la firma).
 
+## Súbelo en otra casa (otros nombres)
+
+Las mismas apps sirven para otra casa: cada box es independiente (sus usuarios, contraseñas, certificado, Amazon y Google se guardan en ese box) y el móvil solo busca el box en su propia wifi. Las dos casas se actualizan igual, desde las mismas releases.
+
+Los usuarios se llaman Fer y Julss hasta que se cambien: en la tele, **«Cambiar nombres de usuarios»** (sale solo mientras alguno no ha entrado nunca). Solo letras y números. Hazlo antes de entrar desde el móvil. Si el disco ya tiene fotos, ponlas en una carpeta con el nombre del usuario (por ejemplo `Lucia/`, en la raíz del disco) desde un ordenador: esa persona las verá al entrar.
+
 ## Versión 1.3: usuarios Fer y Julss
 
 Al abrir la app del móvil o la web sale «¿Quién eres?» con dos botones, **Fer** y **Julss**. La primera vez que pulsas tu nombre inventas tu contraseña; después la escribes para entrar. El móvil recuerda la sesión (botón «Cerrar sesión»); la web la vuelve a pedir tras 30 minutos sin usarla (botón «Salir»). Cada uno solo ve su carpeta del disco: `Fer/` y `Julss/` dentro de la carpeta elegida en el box. El PIN desaparece.
