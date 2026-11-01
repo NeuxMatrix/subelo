@@ -55,7 +55,7 @@ public class ServerService extends Service {
                 http = new HttpServer(this, Config.PORT);
                 http.start();
                 running = true;
-                error = null;
+                error = HttpServer.tlsProblem; // null si el cifrado va bien
                 acquireLocks();
                 registerNsd();
                 startForeground(1, notification());
