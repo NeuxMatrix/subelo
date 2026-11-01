@@ -170,6 +170,18 @@ final class HttpServer {
                 Log.w(TAG, "puerto del ordenador", e);
                 webServer = null;
             }
+        } else if (tlsProblem == null) {
+            // cifrado normal (sin puerto mixto): el puerto del ordenador también, con su certificado.
+            // Aquí no se puede cambiar de certificado en marcha: si cambia la IP del box, al reiniciar.
+            try {
+                webServer = Tls.webContext(ctx.getFilesDir()).getServerSocketFactory().createServerSocket();
+                webServer.setReuseAddress(true);
+                webServer.bind(new InetSocketAddress(port + (Config.WEB_PORT - Config.PORT)));
+                startLoop(webServer, true);
+            } catch (IOException e) {
+                Log.w(TAG, "puerto del ordenador", e);
+                webServer = null;
+            }
         }
     }
 
