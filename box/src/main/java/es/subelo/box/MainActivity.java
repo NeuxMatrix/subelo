@@ -179,6 +179,15 @@ public class MainActivity extends Activity {
             }
         });
         right.addView(toggleButton, Brutal.full(this));
+        // en una casa nueva (nadie ha entrado aún) se pueden poner los nombres de los dos usuarios
+        if (Users.whyNotRename(this, Users.NAMES[0]) == null || Users.whyNotRename(this, Users.NAMES[1]) == null) {
+            right.addView(Brutal.button(this, "Cambiar nombres de usuarios", Brutal.ORANGE, Brutal.BLACK, new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    askNames();
+                }
+            }), Brutal.full(this));
+        }
         for (final String u : Users.NAMES) {
             right.addView(Brutal.button(this, "Borrar contraseña de " + u, Brutal.WHITE, Brutal.INK, new View.OnClickListener() {
                 @Override
@@ -206,7 +215,7 @@ public class MainActivity extends Activity {
                 + "y escribe tu contraseña (la primera vez, inventas una).\n"
                 + "4. Desde un ordenador abre la dirección de arriba. El navegador avisará del certificado "
                 + "la primera vez: «Configuración avanzada» › «Continuar».\n\n"
-                + "Cada usuario solo ve su carpeta del disco (Fer o Julss). Si alguien olvida su contraseña, bórrala "
+                + "Cada usuario solo ve su carpeta del disco (" + Users.NAMES[0] + " o " + Users.NAMES[1] + "). Si alguien olvida su contraseña, bórrala "
                 + "aquí y pondrá otra al entrar. Tras 5 contraseñas incorrectas, ese aparato queda bloqueado 5 minutos. "
                 + "Desactiva la suspensión del box para que esté siempre disponible.");
         help.addView(ht);
@@ -266,6 +275,50 @@ public class MainActivity extends Activity {
         usersText.setText(sb.toString().toUpperCase(java.util.Locale.getDefault()));
         codeText.setText("CÓDIGO DEL BOX " + Tls.shortCode(fingerprint)
                 + (caThumbprint == null || caThumbprint.length() < 8 ? "" : "\nCERTIFICADO DEL ORDENADOR " + caThumbprint.substring(0, 8)));
+    }
+
+    /** Nombres de los dos usuarios: para poner Súbelo en otra casa antes de que nadie entre. */
+    private void askNames() {
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+        int p = dp(20);
+        col.setPadding(p, dp(8), p, 0);
+        TextView t = Brutal.text(this, 15, Brutal.INK);
+        t.setText("Cada usuario tendrá en el disco una carpeta con su nombre. Solo letras y números, sin espacios. "
+                + "Si el disco ya tiene fotos en una carpeta con ese nombre, esa persona las verá al entrar.\n\n"
+                + "Solo se puede cambiar el nombre de quien aún no ha entrado nunca.");
+        col.addView(t);
+        final android.widget.EditText a = new android.widget.EditText(this);
+        final android.widget.EditText b = new android.widget.EditText(this);
+        a.setSingleLine(true);
+        b.setSingleLine(true);
+        a.setText(Users.NAMES[0]);
+        b.setText(Users.NAMES[1]);
+        a.setHint("Usuario 1");
+        b.setHint("Usuario 2");
+        col.addView(a);
+        col.addView(b);
+        new android.app.AlertDialog.Builder(this)
+                .setTitle("Nombres de los usuarios")
+                .setView(col)
+                .setPositiveButton("Guardar", new android.content.DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(android.content.DialogInterface d, int w) {
+                        String err = Users.rename(MainActivity.this, a.getText().toString(), b.getText().toString());
+                        if (err != null) {
+                            new android.app.AlertDialog.Builder(MainActivity.this)
+                                    .setTitle("No se han cambiado")
+                                    .setMessage(err)
+                                    .setPositiveButton("Vale", null)
+                                    .show();
+                            return;
+                        }
+                        Usage.changed();
+                        recreate(); // los botones llevan los nombres
+                    }
+                })
+                .setNegativeButton("Cancelar", null)
+                .show();
     }
 
     private void confirmReset(final String user) {

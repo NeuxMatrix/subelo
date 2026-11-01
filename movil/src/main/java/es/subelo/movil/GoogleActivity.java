@@ -85,11 +85,11 @@ public class GoogleActivity extends Activity {
         setupCard = Brutal.card(this, "g // preparar google (una vez)", Brutal.WHITE);
         TextView steps = Brutal.text(this, 14, Brutal.INK);
         steps.setText("Google pide que cada app tenga su propia «llave». Se hace una vez (mejor desde el ordenador) "
-                + "y sirve para Fer y para Julss:\n\n"
+                + "y sirve para los dos usuarios del box:\n\n"
                 + "1. Entra en console.cloud.google.com con tu cuenta de Google y crea un proyecto («Subelo»).\n"
                 + "2. Busca «Google Photos Picker API» y pulsa Habilitar.\n"
                 + "3. En «Google Auth Platform» rellena la pantalla de consentimiento: nombre Súbelo, tu correo, tipo Externo. "
-                + "En «Público», añade como usuarios de prueba todas las cuentas de Google de las que quieras traer fotos (las tuyas y la de Julss).\n"
+                + "En «Público», añade como usuarios de prueba todas las cuentas de Google de las que quieras traer fotos (las tuyas y las de la otra persona del box).\n"
                 + "4. En «Clientes», crea un cliente de tipo «Aplicación de escritorio».\n"
                 + "5. Copia el ID de cliente y el secreto (el secreto solo se ve al crearlo) y pégalos aquí.");
         setupCard.addView(steps);

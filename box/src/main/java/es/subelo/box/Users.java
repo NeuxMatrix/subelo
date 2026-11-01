@@ -24,7 +24,11 @@ import javax.crypto.spec.PBEKeySpec;
  * mucho, al cerrar el navegador o al reiniciarse el box, y entonces la web vuelve a pedir la contraseña.
  */
 final class Users {
-    static final String[] NAMES = {"Fer", "Julss"};
+    /** Los nombres de siempre (casa de Fer). En otra casa se cambian desde la tele, ver {@link #rename}. */
+    static final String[] DEFAULT_NAMES = {"Fer", "Julss"};
+    /** Los dos usuarios de este box. Se cargan al arrancar la app ({@link #init}); el array no se modifica, se sustituye. */
+    static volatile String[] NAMES = DEFAULT_NAMES;
+    static final int NAME_MAX = 16;
     static final int MIN_LENGTH = 4;
     static final long WEB_IDLE_MS = 30L * 60 * 1000L;
     static final long WEB_MAX_MS = 12L * 60 * 60 * 1000L;
@@ -48,6 +52,78 @@ final class Users {
     private static final Map<String, Web> WEB = new java.util.HashMap<String, Web>();
 
     private Users() {}
+
+    /** Carga los nombres guardados en este box (si nunca se cambiaron, Fer y Julss). */
+    static synchronized void init(Context c) {
+        String a = Config.prefs(c).getString("usuario1", null);
+        String b = Config.prefs(c).getString("usuario2", null);
+        if (a != null && b != null && validName(a) == null && validName(b) == null && !a.equalsIgnoreCase(b)) {
+            NAMES = new String[]{a, b};
+        } else {
+            NAMES = DEFAULT_NAMES;
+        }
+    }
+
+    /** null si el nombre vale para un usuario (y su carpeta del disco); si no, qué le pasa. */
+    static String validName(String n) {
+        if (n == null || n.trim().isEmpty()) return "Falta el nombre";
+        n = n.trim();
+        if (n.length() > NAME_MAX) return "Como mucho " + NAME_MAX + " letras";
+        for (int i = 0; i < n.length(); i++) {
+            char ch = n.charAt(i);
+            if (!Character.isLetterOrDigit(ch)) return "Solo letras y números, sin espacios: «" + n + "»";
+        }
+        return null;
+    }
+
+    /**
+     * Si a este usuario se le puede cambiar el nombre: solo si no tiene contraseña y su carpeta del
+     * disco no existe o está vacía (así no se queda nada suyo con el nombre viejo). Devuelve null si
+     * se puede, o por qué no.
+     */
+    static String whyNotRename(Context c, String user) {
+        if (hasPassword(c, user)) return user + " ya tiene contraseña (ya se ha usado)";
+        Store st = Config.store(c);
+        if (st == null || !st.available()) return null;
+        try {
+            Object d = st.dir(user, false);
+            if (d != null && (!st.listDirs(d).isEmpty() || !st.listFiles(d).isEmpty())) {
+                return "la carpeta «" + user + "» del disco tiene cosas";
+            }
+        } catch (IOException e) {
+            return "no se puede mirar la carpeta «" + user + "»: " + e.getMessage();
+        }
+        return null;
+    }
+
+    /**
+     * Pone los nombres de los dos usuarios (para instalar Súbelo en otra casa). Solo cambia los que
+     * {@link #whyNotRename} deja; devuelve null si ha ido bien o el motivo si no.
+     */
+    static String rename(Context c, String a, String b) {
+        String bad = validName(a);
+        if (bad == null) bad = validName(b);
+        if (bad != null) return bad;
+        a = a.trim();
+        b = b.trim();
+        if (a.equalsIgnoreCase(b)) return "Los dos nombres son iguales";
+        String[] now = NAMES;
+        String[] next = {a, b};
+        for (int i = 0; i < 2; i++) {
+            if (now[i].equals(next[i])) continue;
+            // el nombre nuevo no puede ser el del otro usuario (se mezclarían sus cosas)
+            if (next[i].equalsIgnoreCase(now[1 - i])) {
+                return "No se pueden intercambiar los nombres";
+            }
+            String why = whyNotRename(c, now[i]);
+            if (why != null) return "No se puede cambiar " + now[i] + ": " + why;
+        }
+        synchronized (Users.class) {
+            Config.prefs(c).edit().putString("usuario1", a).putString("usuario2", b).commit();
+            NAMES = next;
+        }
+        return null;
+    }
 
     /** Nombre bien escrito («fer» → «Fer»), o null si no es uno de los dos usuarios. */
     static String canonical(String name) {
