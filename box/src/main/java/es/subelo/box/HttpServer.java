@@ -194,6 +194,24 @@ final class HttpServer {
      * Devuelve null si va bien, o el error.
      */
     private static String selfTest(final SSLContext tls, final Method wrap) {
+        // start() corre en el hilo principal, donde Android no deja usar la red: la prueba va en otro hilo
+        final String[] result = {"la prueba no terminó"};
+        Thread t = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                result[0] = selfTestNow(tls, wrap);
+            }
+        }, "subelo-tls-selftest");
+        t.start();
+        try {
+            t.join(10000);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        return result[0];
+    }
+
+    private static String selfTestNow(final SSLContext tls, final Method wrap) {
         ServerSocket ss = null;
         try {
             ss = wrap != null ? new ServerSocket() : tls.getServerSocketFactory().createServerSocket();
