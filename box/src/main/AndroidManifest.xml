@@ -36,6 +36,11 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".GalleryActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
+
         <service
             android:name=".ServerService"
             android:exported="false" />

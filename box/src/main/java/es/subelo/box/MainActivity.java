@@ -179,6 +179,12 @@ public class MainActivity extends Activity {
             }
         });
         right.addView(toggleButton, Brutal.full(this));
+        right.addView(Brutal.button(this, "🖼 Ver fotos en la tele", Brutal.PURPLE, Brutal.SNOW, new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                startActivity(new android.content.Intent(MainActivity.this, GalleryActivity.class));
+            }
+        }), Brutal.full(this));
         // en una casa nueva (nadie ha entrado aún) se pueden poner los nombres de los dos usuarios
         if (Users.whyNotRename(this, Users.NAMES[0]) == null || Users.whyNotRename(this, Users.NAMES[1]) == null) {
             right.addView(Brutal.button(this, "Cambiar nombres de usuarios", Brutal.ORANGE, Brutal.BLACK, new View.OnClickListener() {
