@@ -129,11 +129,27 @@ final class HttpServer {
         } catch (NoSuchMethodException e) {
             wrapTls = null;
         }
+        // Algunas teles (p. ej. TCL con Android 11) aceptan la conexión pero cortan al cifrar si el
+        // primer byte ya se ha leído. Se prueba aquí mismo, contra el propio box, antes de abrir el puerto.
+        tlsProblem = null;
+        if (wrapTls != null) {
+            String why = selfTest(tls, wrapTls);
+            if (why != null) {
+                Log.w(TAG, "cifrado mixto no funciona, se usa el normal: " + why);
+                wrapTls = null;
+                String why2 = selfTest(tls, null);
+                if (why2 != null) tlsProblem = "El cifrado no funciona en este aparato: " + why2;
+            }
+        } else {
+            String why = selfTest(tls, null);
+            if (why != null) tlsProblem = "El cifrado no funciona en este aparato: " + why;
+        }
         if (wrapTls != null) {
             // socket normal: miramos el primer byte para distinguir https de http
             sslSockets = tls.getSocketFactory();
             server = new ServerSocket();
         } else {
+            sslSockets = null;
             server = tls.getServerSocketFactory().createServerSocket();
         }
         server.setReuseAddress(true);
@@ -153,6 +169,88 @@ final class HttpServer {
             } catch (IOException e) {
                 Log.w(TAG, "puerto del ordenador", e);
                 webServer = null;
+            }
+        }
+    }
+
+    /** Si al arrancar falló la prueba del cifrado, por qué (se enseña en la tele). */
+    static volatile String tlsProblem;
+
+    /**
+     * Conecta con el propio box por 127.0.0.1 y hace un saludo TLS completo, como lo hará el móvil.
+     * wrap != null: puerto mixto (se lee el primer byte y luego se cifra); null: socket TLS normal.
+     * Devuelve null si va bien, o el error.
+     */
+    private static String selfTest(final SSLContext tls, final Method wrap) {
+        ServerSocket ss = null;
+        try {
+            ss = wrap != null ? new ServerSocket() : tls.getServerSocketFactory().createServerSocket();
+            ss.bind(new InetSocketAddress(java.net.InetAddress.getByName("127.0.0.1"), 0));
+            ss.setSoTimeout(3000);
+            final int port = ss.getLocalPort();
+            final String[] clientErr = new String[1];
+            Thread client = new Thread(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        javax.net.ssl.TrustManager tm = new javax.net.ssl.X509TrustManager() {
+                            @Override
+                            public void checkClientTrusted(java.security.cert.X509Certificate[] c, String a) {
+                            }
+
+                            @Override
+                            public void checkServerTrusted(java.security.cert.X509Certificate[] c, String a) {
+                            }
+
+                            @Override
+                            public java.security.cert.X509Certificate[] getAcceptedIssuers() {
+                                return new java.security.cert.X509Certificate[0];
+                            }
+                        };
+                        SSLContext cc = SSLContext.getInstance("TLS");
+                        cc.init(null, new javax.net.ssl.TrustManager[]{tm}, null);
+                        javax.net.ssl.SSLSocket cs = (javax.net.ssl.SSLSocket) cc.getSocketFactory().createSocket("127.0.0.1", port);
+                        try {
+                            cs.setSoTimeout(3000);
+                            cs.startHandshake();
+                            cs.getOutputStream().write('x');
+                            cs.getOutputStream().flush();
+                            if (cs.getInputStream().read() != 'y') clientErr[0] = "sin respuesta";
+                        } finally {
+                            cs.close();
+                        }
+                    } catch (Exception e) {
+                        clientErr[0] = String.valueOf(e);
+                    }
+                }
+            }, "subelo-tls-test");
+            client.start();
+            Socket s = ss.accept();
+            try {
+                s.setSoTimeout(3000);
+                Socket t = s;
+                if (wrap != null) {
+                    int first = s.getInputStream().read();
+                    t = (Socket) wrap.invoke(tls.getSocketFactory(), s, new ByteArrayInputStream(new byte[]{(byte) first}), true);
+                }
+                ((javax.net.ssl.SSLSocket) t).startHandshake();
+                if (t.getInputStream().read() != 'x') throw new IOException("no llega el dato de prueba");
+                t.getOutputStream().write('y');
+                t.getOutputStream().flush();
+                t.close();
+                client.join(3000);
+            } finally {
+                s.close();
+            }
+            return clientErr[0];
+        } catch (java.lang.reflect.InvocationTargetException e) {
+            return String.valueOf(e.getCause());
+        } catch (Throwable e) {
+            return String.valueOf(e);
+        } finally {
+            try {
+                if (ss != null) ss.close();
+            } catch (IOException ignored) {
             }
         }
     }
