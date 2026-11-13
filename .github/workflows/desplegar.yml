@@ -84,10 +84,17 @@ jobs:
             ${{ env.IMAGEN }}:${{ github.sha }}
 
       - name: Preparar el acceso SSH al VPS
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
         run: |
           install -m 700 -d ~/.ssh ~/bin
-          printf '%s\n' "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/vps
+          # Sin \r ni BOM: una llave guardada desde Windows da «error in libcrypto».
+          printf '%s\n' "$VPS_SSH_KEY" | tr -d '\r' | sed '1s/^\xEF\xBB\xBF//' > ~/.ssh/vps
           chmod 600 ~/.ssh/vps
+          if ! ssh-keygen -y -f ~/.ssh/vps > /dev/null 2>&1; then
+            echo "::error::El secret VPS_SSH_KEY no es una llave privada válida ($(head -c 36 ~/.ssh/vps | tr -c 'A-Za-z -' '?')…)"
+            exit 1
+          fi
           ssh-keyscan -H "$VPS" >> ~/.ssh/known_hosts 2>/dev/null
           # El VPS corta a ratos conexiones SSH («Connection reset»): ssh y scp se repiten hasta 5 veces.
           for h in ssh scp; do
