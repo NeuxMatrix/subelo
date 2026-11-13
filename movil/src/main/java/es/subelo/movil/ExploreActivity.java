@@ -69,7 +69,7 @@ public class ExploreActivity extends Activity {
     private String path = "";
     private BoxClient bc;
     private TextView pathText;
-    private Button downloadButton, uploadButton, folderButton, moveButton, deleteButton, renameButton, shareButton, backupButton, echoButton, favButton, geoButton;
+    private Button downloadButton, uploadButton, folderButton, moveButton, deleteButton, renameButton, shareButton, echoButton, favButton, geoButton;
     /** Las fotos a las que se está eligiendo sitio (📍), mientras está abierto el mapa. */
     /** Lo que se está ubicando (📍) mientras está abierto el mapa: archivos, y carpetas acabadas en «/». */
     private ArrayList<String> geoNames;
@@ -194,13 +194,6 @@ public class ExploreActivity extends Activity {
             }
         });
         bar.addView(shareButton, Brutal.spaced(this, dp(56), LinearLayout.LayoutParams.WRAP_CONTENT, 0));
-        backupButton = Brutal.button(this, "☁", Brutal.LILAC, Brutal.INK, new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                backupDialog();
-            }
-        });
-        bar.addView(backupButton, Brutal.spaced(this, dp(56), LinearLayout.LayoutParams.WRAP_CONTENT, 0));
         moveButton = Brutal.button(this, "↦ Mover", Brutal.PAPER, Brutal.BLACK, new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -344,7 +337,6 @@ public class ExploreActivity extends Activity {
         } else if (!current.sharedWith.isEmpty()) {
             where += "\n👥 COMPARTIDA CON " + android.text.TextUtils.join(", ", current.sharedWith.keySet());
         }
-        if (current.own() && current.backup != null) where += "\n☁ CON COPIA EN AMAZON";
         if (selecting) {
             pathText.setText(where + "\n■ " + selected.size() + " ELEGIDOS · TOCA PARA AÑADIR · ATRÁS PARA SALIR");
             int nFiles = selectedFiles().size(), nPhotos = 0;
@@ -374,8 +366,6 @@ public class ExploreActivity extends Activity {
         uploadButton.setVisibility(add ? View.VISIBLE : View.GONE);
         folderButton.setVisibility(add ? View.VISIBLE : View.GONE);
         shareButton.setVisibility(!selecting && current.own() && !path.isEmpty() ? View.VISIBLE : View.GONE);
-        backupButton.setVisibility(!selecting && current.own() && !path.isEmpty() ? View.VISIBLE : View.GONE);
-        backupButton.setText(current.backup != null ? "☁✓" : "☁");
         boolean edit = selecting && current.own();
         moveButton.setVisibility(edit ? View.VISIBLE : View.GONE);
         deleteButton.setVisibility(edit ? View.VISIBLE : View.GONE);
@@ -713,35 +703,6 @@ public class ExploreActivity extends Activity {
                 .show();
     }
 
-    /** «Julss ya no puede entrar»: con la contraseña de Súbelo, el box vuelve a copiar en esta cuenta de Amazon. */
-    private void trustAmazon(final String other) {
-        LinearLayout form = new LinearLayout(this);
-        form.setOrientation(LinearLayout.VERTICAL);
-        form.setPadding(dp(20), dp(8), dp(20), 0);
-        final EditText pw = Brutal.password(this, "Contraseña de " + Prefs.user(this));
-        form.addView(pw);
-        new AlertDialog.Builder(this)
-                .setTitle(other + " ya no puede entrar")
-                .setMessage("¿Seguro que " + other + " ya no sabe la contraseña de esta cuenta de Amazon? Si la sabe, "
-                        + "vería todas tus copias.\n\nEscribe tu contraseña de Súbelo para seguir.")
-                .setView(form)
-                .setPositiveButton("Sí, hacer copias", new DialogInterface.OnClickListener() {
-                    @Override
-                    public void onClick(DialogInterface d, int w) {
-                        final String p = pw.getText().toString();
-                        if (p.isEmpty()) return;
-                        run("☁ Vuelven las copias en Amazon", new Op() {
-                            @Override
-                            public void go(BoxClient c) throws IOException {
-                                c.amazonTrust(p);
-                            }
-                        });
-                    }
-                })
-                .setNegativeButton("Cancelar", null)
-                .show();
-    }
-
     interface Op {
         void go(BoxClient c) throws IOException;
     }
@@ -824,187 +785,6 @@ public class ExploreActivity extends Activity {
                 });
             }
         });
-    }
-
-    // ---------- copia en Amazon ----------
-
-    private void backupDialog() {
-        final String folder = path;
-        final String name = folder.substring(folder.lastIndexOf('/') + 1);
-        bg.execute(new Runnable() {
-            @Override
-            public void run() {
-                JSONObject st = null;
-                String err = null;
-                try {
-                    if (bc == null) bc = BoxClient.connect(ExploreActivity.this);
-                    st = bc.backup();
-                } catch (IOException e) {
-                    err = e.getMessage();
-                }
-                final JSONObject status = st;
-                final String error = err;
-                runOnUiThread(new Runnable() {
-                    @Override
-                    public void run() {
-                        if (!folder.equals(path)) return;
-                        if (error != null) {
-                            Toast.makeText(ExploreActivity.this, error, Toast.LENGTH_LONG).show();
-                            return;
-                        }
-                        showBackup(folder, name, status);
-                    }
-                });
-            }
-        });
-    }
-
-    private void showBackup(final String folder, final String name, JSONObject status) {
-        String mode = current.backup;
-        AlertDialog.Builder b = new AlertDialog.Builder(this).setTitle("☁ «" + name + "» en Amazon Fotos");
-        if (!status.optBoolean("connected") || status.optBoolean("expired")) {
-            b.setMessage((status.optBoolean("expired") ? "La sesión de Amazon ha caducado." : "Súbelo aún no está conectado con tu Amazon.")
-                    + "\n\nEntra en Amazon y luego vuelve a pulsar ☁.")
-                    .setPositiveButton("Entrar en Amazon", new DialogInterface.OnClickListener() {
-                        @Override
-                        public void onClick(DialogInterface d, int w) {
-                            startActivity(new Intent(ExploreActivity.this, AmazonActivity.class)
-                                    .putExtra(AmazonActivity.EXTRA_ONLY_LOGIN, true));
-                        }
-                    })
-                    .setNegativeButton("Cancelar", null);
-            // sin sesión se apunta, y se borra cuando se vuelva a entrar con esa cuenta
-            if ("on".equals(mode)) b.setNeutralButton("Dejar de hacer copia", stopBackup(folder, name, status));
-            b.show();
-            return;
-        }
-        final String me = Prefs.user(this);
-        // borrar de Amazon lo hace el box con la sesión de esa cuenta: mejor no cambiar de cuenta mientras
-        final String busy = status.optJSONArray("removing") != null && status.optJSONArray("removing").length() > 0
-                ? "⌛ Aún se está borrando de Amazon lo que dejaste de copiar: espera a que acabe antes de entrar con "
-                + "otra cuenta.\n\n" : "";
-        if (!status.isNull("sameAs") && status.optBoolean("sameBefore")) {
-            final String other = status.optString("sameAs");
-            b.setMessage(busy + "🔒 " + other + " entró en Súbelo con tu misma cuenta de Amazon, así que sabe entrar en ella y "
-                    + "vería tus copias (Amazon Fotos no tiene perfiles). Por eso no se hacen.\n\n"
-                    + "Si la cuenta es tuya, cámbiale la contraseña en Amazon (y cierra la sesión en todos los "
-                    + "dispositivos) y pulsa «" + other + " ya no puede entrar». Si no es tuya, pulsa antes «Dejar de "
-                    + "hacer copia» en cada carpeta copiada (se borra de esta cuenta) y luego entra con tu propia cuenta.")
-                    .setPositiveButton(other + " ya no puede entrar", new DialogInterface.OnClickListener() {
-                        @Override
-                        public void onClick(DialogInterface d, int w) {
-                            trustAmazon(other);
-                        }
-                    })
-                    .setNeutralButton("Entrar con otra cuenta", new DialogInterface.OnClickListener() {
-                        @Override
-                        public void onClick(DialogInterface d, int w) {
-                            startActivity(new Intent(ExploreActivity.this, AmazonActivity.class));
-                        }
-                    });
-            // los tres botones están ocupados: «Cerrar» se cambia por este (se cierra tocando fuera)
-            if ("on".equals(mode)) b.setNegativeButton("Dejar de hacer copia", stopBackup(folder, name, status));
-            else b.setNegativeButton("Cerrar", null);
-            b.show();
-            return;
-        }
-        if (!status.isNull("sameAs")) {
-            String other = status.optString("sameAs");
-            b.setMessage(busy + "🔒 Tu Súbelo y el de " + other + " están conectados a la misma cuenta de Amazon. Amazon Fotos no "
-                    + "tiene perfiles: con una sola cuenta, cada uno vería las fotos del otro, así que no se hacen copias.\n\n"
-                    + "Lo que ya se copió sigue en esa cuenta, en «Súbelo Backup/" + me + "». Si no quieres que " + other
-                    + " lo vea, antes de cambiar de cuenta pulsa «Dejar de hacer copia» en cada carpeta copiada y espera "
-                    + "a que se borre de Amazon. Si cambias antes, ya solo se puede borrar en la web de Amazon Fotos.\n\n"
-                    + "Para hacer copias, cada uno tiene que entrar con su propia cuenta de Amazon. " + other + " o tú: "
-                    + "«Entrar con otra cuenta» (o «📺 Fotos al Echo») y entrar con la propia. Para que las dos cuentas "
-                    + "tengan fotos ilimitadas, quien tenga Prime puede invitar a la otra a su «Archivo familiar» desde "
-                    + "Amazon Fotos; dejad apagado «añadir subidas al Archivo familiar».")
-                    .setPositiveButton("Entrar con otra cuenta", new DialogInterface.OnClickListener() {
-                        @Override
-                        public void onClick(DialogInterface d, int w) {
-                            startActivity(new Intent(ExploreActivity.this, AmazonActivity.class));
-                        }
-                    })
-                    .setNegativeButton("Cerrar", null);
-            if ("on".equals(mode)) b.setNeutralButton("Dejar de hacer copia", stopBackup(folder, name, status));
-            b.show();
-            return;
-        }
-        String progress = BackupActivity.describe(status, folder);
-        String err = status.isNull("error") ? null : status.optString("error", null);
-        if (!status.isNull("hideError")) err = (err == null ? "" : err + "\n") + status.optString("hideError");
-        if (mode == null) {
-            b.setMessage((BackupActivity.removing(status, folder) ? "⌛ Se está borrando de Amazon lo que se copió de "
-                    + "esta carpeta.\n\n" + (err == null ? "" : "✖ " + err + "\n\n") : "")
-                    + "Se sube una copia de esta carpeta, con todo lo que tenga dentro, a «Súbelo Backup» de tu "
-                    + "Amazon Fotos. Lo que añadas después también se copia. Las fotos se suben ocultas y fuera de los "
-                    + "álbumes, para que no salgan en el Echo ni en los recuerdos.\n\nSi algún día se rompe el disco, "
-                    + "ahí lo tienes. Y fuera de casa lo puedes ver en «☁ Copias en Amazon».")
-                    .setPositiveButton("Hacer backup en Amazon", new DialogInterface.OnClickListener() {
-                        @Override
-                        public void onClick(DialogInterface d, int w) {
-                            ExploreActivity.this.run("☁ «" + name + "» se está copiando a Amazon", new Op() {
-                                @Override
-                                public void go(BoxClient c) throws IOException {
-                                    c.backupAdd(folder);
-                                }
-                            });
-                        }
-                    });
-        } else if ("inside".equals(mode)) {
-            b.setMessage("✓ Esta carpeta ya tiene copia en Amazon porque está dentro de otra que la tiene."
-                    + (progress == null ? "" : "\n\n" + progress) + (err == null ? "" : "\n\n✖ " + err));
-        } else {
-            b.setMessage("✓ Esta carpeta tiene copia en Amazon, con todo lo que tiene dentro."
-                    + (progress == null ? "" : "\n\n" + progress)
-                    + (status.optBoolean("running") ? "\n↻ Subiendo ahora…" : "")
-                    + (err == null ? "" : "\n\n✖ " + err))
-                    .setNeutralButton("Dejar de hacer copia", stopBackup(folder, name, status))
-                    .setPositiveButton("Ver en Amazon", new DialogInterface.OnClickListener() {
-                        @Override
-                        public void onClick(DialogInterface d, int w) {
-                            startActivity(new Intent(ExploreActivity.this, BackupActivity.class));
-                        }
-                    });
-        }
-        b.setNegativeButton("Cerrar", null).show();
-    }
-
-    /** «Dejar de hacer copia»: se pregunta antes, porque también se borra de Amazon. */
-    private DialogInterface.OnClickListener stopBackup(final String folder, final String name, JSONObject status) {
-        final boolean connected = status.optBoolean("connected") && !status.optBoolean("expired");
-        // un box antiguo dejaría de copiar sin borrar de Amazon: ni se intenta
-        final boolean oldBox = !status.has("removing");
-        return new DialogInterface.OnClickListener() {
-            @Override
-            public void onClick(DialogInterface d, int w) {
-                if (oldBox) {
-                    new AlertDialog.Builder(ExploreActivity.this).setMessage(BoxClient.OLD_BOX_TRASH)
-                            .setPositiveButton("Vale", null).show();
-                    return;
-                }
-                new AlertDialog.Builder(ExploreActivity.this)
-                        .setTitle("¿Dejar de copiar «" + name + "»?")
-                        .setMessage("Lo que se copió de esta carpeta se borra de Amazon Fotos: va a su papelera, donde se "
-                                + "puede recuperar durante 90 días. En el disco no se toca nada."
-                                + (connected ? "" : "\n\nComo ahora Súbelo no tiene tu sesión de Amazon, se borrará cuando "
-                                + "vuelvas a entrar con la misma cuenta."))
-                        .setPositiveButton("Dejar de copiar y borrar de Amazon", new DialogInterface.OnClickListener() {
-                            @Override
-                            public void onClick(DialogInterface d2, int w2) {
-                                ExploreActivity.this.run("Ya no se copia «" + name + "». "
-                                        + (connected ? "Se está borrando de Amazon." : "Se borrará de Amazon al volver a entrar."), new Op() {
-                                    @Override
-                                    public void go(BoxClient c) throws IOException {
-                                        c.backupRemove(folder, null);
-                                    }
-                                });
-                            }
-                        })
-                        .setNegativeButton("Cancelar", null)
-                        .show();
-            }
-        };
     }
 
     // ---------- nueva carpeta ----------

@@ -88,8 +88,6 @@ final class BoxClient {
         String owner;
         /** Con quién compartes esta carpeta: usuario → «ver» / «subir». */
         final java.util.Map<String, String> sharedWith = new java.util.LinkedHashMap<String, String>();
-        /** Copia en Amazon: «on» (esta carpeta), «inside» (va con una que la contiene) o null. */
-        String backup;
 
         boolean own() {
             return "own".equals(access);
@@ -312,7 +310,6 @@ final class BoxClient {
         if (a != null) for (int i = 0; i < a.length(); i++) l.folders.add(a.optString(i));
         l.access = o.optString("access", "own");
         l.owner = o.optString("owner", null);
-        l.backup = o.optString("backup", null);
         JSONObject sw = o.optJSONObject("sharedWith");
         if (sw != null) {
             for (java.util.Iterator<String> it = sw.keys(); it.hasNext(); ) {
@@ -522,52 +519,11 @@ final class BoxClient {
         return form("/api/amazon/sync", new ArrayList<String[]>());
     }
 
-    /** El otro usuario entró antes con esta cuenta de Amazon pero ya no sabe entrar: que vuelvan las copias. */
-    JSONObject amazonTrust(String password) throws IOException {
-        List<String[]> f = new ArrayList<String[]>();
-        f.add(new String[]{"password", password});
-        return form("/api/amazon/trust", f);
-    }
-
     /** Olvidar la sesión de Amazon en el box (pide la contraseña de Súbelo). */
     JSONObject amazonDisconnect(String password) throws IOException {
         List<String[]> f = new ArrayList<String[]>();
         f.add(new String[]{"password", password});
         return form("/api/amazon/disconnect", f);
-    }
-
-    // ---------- copia de seguridad en Amazon Fotos ----------
-
-    JSONObject backup() throws IOException {
-        return newFeature("/api/backup");
-    }
-
-    /** Para un box que no da «removing» en backup(): deja de copiar pero no sabe borrar de Amazon. */
-    static final String OLD_BOX_TRASH = "El Súbelo de la tele tiene una versión antigua y no sabe borrar de Amazon. "
-            + "Actualízalo (en la tele abre «Súbelo Servidor» y pulsa «Buscar actualizaciones») y vuelve a probar.";
-
-    JSONObject backupAdd(String path) throws IOException {
-        List<String[]> f = new ArrayList<String[]>();
-        f.add(new String[]{"path", path});
-        return form("/api/backup/add", f);
-    }
-
-    /**
-     * Deja de copiar la carpeta y el box borra de Amazon lo copiado (también si ya no estaba marcada).
-     * node: la carpeta de Amazon, si se sabe (desde «☁ Copias en Amazon»).
-     */
-    JSONObject backupRemove(String path, String node) throws IOException {
-        List<String[]> f = new ArrayList<String[]>();
-        f.add(new String[]{"path", path});
-        f.add(new String[]{"trash", "1"});
-        if (node != null) f.add(new String[]{"node", node});
-        JSONObject o = form("/api/backup/remove", f);
-        if (!o.has("removing")) { // hasta la 2.22 solo se dejaba de copiar
-            throw new BoxException(404, "Ya no se copia, pero el box tiene una versión antigua y no lo borra de Amazon. "
-                    + "Actualiza el Súbelo de la tele (abre «Súbelo Servidor» y pulsa «Buscar actualizaciones») y luego "
-                    + "bórrala desde «☁ Copias en Amazon», manteniéndola pulsada.");
-        }
-        return o;
     }
 
     /** Copia fotos de una carpeta a la carpeta «Echo» (el box las añade al álbum). */
@@ -576,41 +532,6 @@ final class BoxClient {
         f.add(new String[]{"path", path});
         for (String n : names) f.add(new String[]{"name", n});
         return form("/api/echo", f);
-    }
-
-    // ---------- traer de Google Fotos: el box descarga lo que se elige en el selector de Google ----------
-
-    JSONObject google() throws IOException {
-        return newFeature("/api/google");
-    }
-
-    JSONObject googleSetup(String clientId, String secret) throws IOException {
-        List<String[]> f = new ArrayList<String[]>();
-        f.add(new String[]{"client", clientId});
-        f.add(new String[]{"secret", secret});
-        return form("/api/google/setup", f);
-    }
-
-    JSONObject googleReset() throws IOException {
-        return form("/api/google/reset", new ArrayList<String[]>());
-    }
-
-    /** Pasa al box el código que dio Google (con su verificador PKCE); devuelve el estado con «pickerUri». */
-    JSONObject googleStart(String code, String verifier, String redirect, String path) throws IOException {
-        List<String[]> f = new ArrayList<String[]>();
-        f.add(new String[]{"code", code});
-        f.add(new String[]{"verifier", verifier});
-        f.add(new String[]{"redirect", redirect});
-        f.add(new String[]{"path", path});
-        return form("/api/google/start", f);
-    }
-
-    JSONObject googleCancel() throws IOException {
-        return form("/api/google/cancel", new ArrayList<String[]>());
-    }
-
-    JSONObject googleClear() throws IOException {
-        return form("/api/google/clear", new ArrayList<String[]>());
     }
 
     /** Miniatura JPEG o null si el box no puede generarla. */

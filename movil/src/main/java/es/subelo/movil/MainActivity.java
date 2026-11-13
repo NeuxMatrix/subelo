@@ -202,12 +202,6 @@ public class MainActivity extends Activity {
                 openBox(AlbumsActivity.class);
             }
         }), Brutal.full(this));
-        main.addView(Brutal.button(this, "⬇ Traer de Google Fotos", Brutal.ORANGE, Brutal.BLACK, new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                openBox(GoogleActivity.class);
-            }
-        }), Brutal.full(this));
         main.addView(Brutal.button(this, "▦ Mis fotos por carpetas", Brutal.PAPER, Brutal.BLACK, new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -226,14 +220,8 @@ public class MainActivity extends Activity {
                 openBox(AmazonActivity.class);
             }
         }), Brutal.full(this));
-        main.addView(Brutal.button(this, "☁ Copias en Amazon", Brutal.PAPER, Brutal.BLACK, new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                startActivity(new Intent(MainActivity.this, BackupActivity.class)); // también fuera de casa
-            }
-        }), Brutal.full(this));
         TextView sub = Brutal.mono(this, 11, Brutal.PAPER);
-        sub.setText("VER · SUBIR A UNA CARPETA · DESCARGAR · DÓNDE SE HICIERON · TU ÁLBUM DEL ECHO · TUS COPIAS EN AMAZON, TAMBIÉN FUERA DE CASA");
+        sub.setText("VER · SUBIR A UNA CARPETA · DESCARGAR · DÓNDE SE HICIERON · TU ÁLBUM DEL ECHO");
         sub.setPadding(dp(2), dp(4), 0, 0);
         main.addView(sub);
         col.addView(main, col.indexOfChild(box), Brutal.cardParams(this)); // lo primero, lo que más se usa

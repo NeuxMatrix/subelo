@@ -338,7 +338,7 @@ public class MainActivity extends Activity {
                     public void onClick(android.content.DialogInterface d, int w) {
                         try {
                             Users.reset(MainActivity.this, user);
-                            // quien ponga la contraseña nueva no hereda su Amazon (Echo y copias)
+                            // quien ponga la contraseña nueva no hereda su Amazon (el Echo)
                             EchoSync.forgetSession(MainActivity.this, user);
                         } catch (java.io.IOException e) {
                             ServerService.error = "No se pudo borrar la contraseña: " + e.getMessage();
