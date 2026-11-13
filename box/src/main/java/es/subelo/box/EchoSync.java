@@ -63,7 +63,6 @@ final class EchoSync {
     /** Cuántas veces se ha conectado o desconectado Amazon (por usuario, y en total). */
     private static final Map<String, Integer> GEN = new HashMap<String, Integer>();
     private static int genAll;
-    private static boolean seeded;
 
     /** La cuenta de Amazon ha cambiado a mitad de un repaso: se deja y el siguiente empieza con la nueva. */
     static final class AccountChanged extends IOException {
@@ -96,11 +95,6 @@ final class EchoSync {
         return new File(c.getFilesDir(), "echo-" + user + ".txt");
     }
 
-    /** Las cuentas de Amazon que ha usado cada usuario (no se borra al desconectar). */
-    private static File historyFile(Context c) {
-        return new File(c.getFilesDir(), "amazon-cuentas.txt");
-    }
-
     /** Los ajustes tal cual están en el archivo, sin descifrar la sesión. */
     private static synchronized Properties raw(Context c, String user) {
         Properties p = new Properties();
@@ -117,11 +111,6 @@ final class EchoSync {
             }
         }
         return p;
-    }
-
-    /** ¿Hay una sesión guardada (aunque no se pueda descifrar)? */
-    private static boolean hasSession(Properties raw) {
-        return raw.getProperty("cookie") != null || raw.getProperty("cookieEnc") != null;
     }
 
     static synchronized Properties config(Context c, String user) {
@@ -199,29 +188,17 @@ final class EchoSync {
             if (root[1] != null) p.setProperty("owner", root[1]);
             else p.remove("owner");
             p.remove("expired");
+            p.remove("trusted"); // de la copia en Amazon (hasta la 2.29)
             save(c, user, p);
             bump(user); // lo que esté subiendo con la sesión de antes, que pare
-            seed(c);
-            remember(c, user, root);
-            // si otro dijo «ya no puede entrar» de esta cuenta, ya no vale: acaba de entrar
-            for (String other : Users.NAMES) {
-                if (other.equals(user)) continue;
-                Properties q = raw(c, other);
-                if (root[0].equals(q.getProperty("trusted"))) {
-                    q.remove("trusted");
-                    save(c, other, q);
-                }
-            }
         }
         status(user).lastError = null;
         kick(c, user);
-        // las copias que esperaban a que se volviera a entrar, y las del otro (puede que ya no compartan cuenta)
-        for (String u : Users.NAMES) Backup.kick(c, u);
     }
 
     /**
      * Las conexiones de antes de la 2.22 no guardaban de qué cuenta de Amazon eran: se averigua
-     * con la sesión y se apunta (sin eso no se sabría si Fer y Julss comparten cuenta).
+     * con la sesión y se apunta (hace falta para crear la carpeta «Súbelo Echo»).
      */
     static void fillAccount(Context c, String user, Properties p, Amazon a) throws IOException {
         if (p.getProperty("root") != null) return;
@@ -232,120 +209,13 @@ final class EchoSync {
             q.setProperty("root", root[0]);
             if (root[1] != null) q.setProperty("owner", root[1]);
             save(c, user, q);
-            remember(c, user, root);
         }
         p.setProperty("root", root[0]);
         if (root[1] != null) p.setProperty("owner", root[1]);
     }
 
-    /**
-     * La primera vez en cada arranque: apunta en el historial las cuentas ya conectadas (las de
-     * antes de la 2.22 no se apuntaban), para que «antes» las tenga en cuenta.
-     */
-    private static synchronized void seed(Context c) {
-        if (seeded) return;
-        seeded = true;
-        for (String u : Users.NAMES) {
-            Properties p = raw(c, u);
-            if (p.getProperty("root") != null) remember(c, u, new String[]{p.getProperty("root"), p.getProperty("owner")});
-        }
-    }
-
-    /** Apunta que este usuario ha entrado con esta cuenta de Amazon. */
-    private static synchronized void remember(Context c, String user, String[] root) {
-        for (String[] h : history(c)) if (h[0].equals(user) && h[1].equals(root[0])) return;
-        try {
-            Writer w = new OutputStreamWriter(new FileOutputStream(historyFile(c), true), "UTF-8");
-            try {
-                w.write(user + "\t" + root[0] + "\t" + (root[1] == null ? "" : root[1]) + "\n");
-            } finally {
-                w.close();
-            }
-        } catch (IOException ignored) {
-        }
-    }
-
-    private static synchronized List<String[]> history(Context c) {
-        List<String[]> out = new ArrayList<String[]>();
-        File f = historyFile(c);
-        if (!f.isFile()) return out;
-        try {
-            BufferedReader in = new BufferedReader(new InputStreamReader(new FileInputStream(f), "UTF-8"));
-            try {
-                String l;
-                while ((l = in.readLine()) != null) {
-                    String[] x = l.split("\t", -1);
-                    if (x.length == 3 && !x[0].isEmpty() && !x[1].isEmpty()) out.add(x);
-                }
-            } finally {
-                in.close();
-            }
-        } catch (IOException ignored) {
-        }
-        return out;
-    }
-
-    /**
-     * Si el otro usuario de Súbelo tiene conectada esta misma cuenta de Amazon («now»), o entró con
-     * ella alguna vez («before»): {usuario, "now" o "before"}, o null. Amazon Fotos no tiene perfiles:
-     * quien entra en una cuenta lo ve todo, así que la copia de seguridad no se hace. Lo de «antes»
-     * vale si el dueño dice que el otro ya no sabe entrar (trust()).
-     */
-    static String[] shared(Context c, String user) {
-        seed(c);
-        // sin descifrar: si la sesión del otro no se pudiera abrir, seguiría contando como conectada
-        Properties mine = raw(c, user);
-        String root = mine.getProperty("root"), owner = mine.getProperty("owner");
-        if (!hasSession(mine) || root == null) return null;
-        for (String other : Users.NAMES) {
-            if (other.equals(user)) continue;
-            Properties p = raw(c, other);
-            if (hasSession(p) && same(root, owner, p.getProperty("root"), p.getProperty("owner"))) {
-                return new String[]{other, "now"};
-            }
-        }
-        if (root.equals(mine.getProperty("trusted"))) return null;
-        for (String[] h : history(c)) {
-            if (h[0].equals(user)) continue;
-            if (same(root, owner, h[1], h[2].isEmpty() ? null : h[2])) return new String[]{h[0], "before"};
-        }
-        return null;
-    }
-
-    private static boolean same(String root, String owner, String root2, String owner2) {
-        return root.equals(root2) || owner != null && owner.equals(owner2);
-    }
-
-    /** El otro usuario con quien se comparte (o se compartió) la cuenta de Amazon, o null. */
-    static String sameAccountAs(Context c, String user) {
-        String[] s = shared(c, user);
-        return s == null ? null : s[0];
-    }
-
-    /**
-     * El dueño de la cuenta dice que el otro ya no sabe entrar en ella (ha cambiado la contraseña de
-     * Amazon, o nunca la supo): vuelven las copias. Si el otro la tiene conectada ahora, no sirve.
-     */
-    static void trust(Context c, String user) throws IOException {
-        synchronized (EchoSync.class) {
-            Properties p = config(c, user);
-            String root = p.getProperty("root");
-            if (p.getProperty("cookie") == null || root == null) throw new IOException("Primero entra en Amazon");
-            String[] sh = shared(c, user);
-            if (sh != null && sh[1].equals("now")) {
-                throw new IOException(sh[0] + " tiene conectada ahora esta misma cuenta de Amazon: primero tiene que quitarla");
-            }
-            p.setProperty("trusted", root);
-            save(c, user, p);
-        }
-        Backup.kick(c, user);
-    }
-
     static void disconnect(Context c, String user) {
         synchronized (EchoSync.class) {
-            seed(c);
-            Properties p = raw(c, user);
-            if (p.getProperty("root") != null) remember(c, user, new String[]{p.getProperty("root"), p.getProperty("owner")});
             configFile(c, user).delete();
             stateFile(c, user).delete();
             OPENED.remove(user);
@@ -355,7 +225,6 @@ final class EchoSync {
         s.lastError = null;
         s.inAlbum = 0;
         s.pending = 0;
-        for (String u : Users.NAMES) Backup.kick(c, u); // el otro puede que ya no comparta cuenta
     }
 
     /**
@@ -415,9 +284,6 @@ final class EchoSync {
         JSONObject o = new JSONObject();
         o.put("connected", p.getProperty("cookie") != null);
         o.put("expired", p.getProperty("expired") != null);
-        String[] same = shared(c, user);
-        o.put("sameAs", same == null ? JSONObject.NULL : same[0]);
-        o.put("sameBefore", same != null && same[1].equals("before"));
         o.put("encrypted", Secret.works());
         o.put("folder", FOLDER);
         if (p.getProperty("unreadable") != null && s.lastError == null) {
@@ -459,10 +325,6 @@ final class EchoSync {
         }
     }
 
-    /** La sesión de Amazon «cookie» ya no vale (lo usa también la copia de seguridad). */
-    static void markExpired(Context c, String user, String cookie, String msg) {
-        expired(c, user, cookie, msg);
-    }
 
     private static void expired(Context c, String user, String cookie, String msg) {
         synchronized (EchoSync.class) {
@@ -605,9 +467,9 @@ final class EchoSync {
                     n.album = null;
                     state.put(f.name, n);
                     if (!up.inFolder) {
-                        // ya estaba en Amazon en otra carpeta (la copia de seguridad, que va oculta, o la
-                        // del móvil): se usa esa, pero sin ocultar, que es para que salga en el Echo. Se
-                        // apunta ya, para que al dejar de copiar esa carpeta no se lleve esta foto
+                        // ya estaba en Amazon en otra carpeta (una copia de seguridad de antes de la 2.30,
+                        // que iba oculta, o la del móvil): se usa esa, pero sin ocultar, que es para que
+                        // salga en el Echo
                         save(c, user, gen, state);
                         try {
                             a.setHidden(up.id, false);
@@ -683,38 +545,6 @@ final class EchoSync {
     }
 
     // ---------- lo ya subido ----------
-
-    /**
-     * Las fotos de Amazon que usa el Echo de alguno. Si Amazon ya tenía la foto en una copia de
-     * seguridad, el Echo usa esa misma: la copia no la puede ocultar ni borrar.
-     */
-    static Set<String> nodes(Context c) {
-        Set<String> out = new HashSet<String>();
-        for (String u : Users.NAMES) for (Entry e : load(c, u).values()) out.add(e.node);
-        return out;
-    }
-
-    /** La última cuenta de Amazon con la que entró este usuario (aunque ya no esté conectada), o null. */
-    static String lastRoot(Context c, String user) {
-        String r = null;
-        for (String[] h : history(c)) if (h[0].equals(user)) r = h[1];
-        return r;
-    }
-
-    /**
-     * Otro usuario con sesión en esa cuenta de Amazon: {usuario, sesión, tld}, o null. Sirve para
-     * borrar las copias que se quedaron en una cuenta compartida después de cambiarse a otra.
-     */
-    static String[] sessionFor(Context c, String root, String except) {
-        for (String u : Users.NAMES) {
-            if (u.equals(except)) continue;
-            Properties p = config(c, u);
-            if (root.equals(p.getProperty("root")) && p.getProperty("cookie") != null && p.getProperty("expired") == null) {
-                return new String[]{u, p.getProperty("cookie"), p.getProperty("tld", "es")};
-            }
-        }
-        return null;
-    }
 
     private static Map<String, Entry> load(Context c, String user) {
         Map<String, Entry> m = new LinkedHashMap<String, Entry>();

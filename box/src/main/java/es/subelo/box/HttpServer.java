@@ -75,18 +75,6 @@ import javax.net.ssl.SSLSocketFactory;
  * GET  /api/amazon/albums    álbumes de Amazon Photos
  * POST /api/amazon/album     id=&title= o link=: el álbum del Echo
  * POST /api/amazon/sync      repasar ya;  POST /api/amazon/disconnect: olvidar la sesión de Amazon
- * POST /api/amazon/trust     password=: el otro usuario entró antes con esta cuenta de Amazon pero ya no
- *                            sabe entrar (se le cambió la contraseña): vuelven las copias de seguridad
- * GET  /api/backup           copia en Amazon Fotos (Backup): carpetas marcadas y cuánto llevan subido
- * POST /api/backup/add       path=: hacer backup de esa carpeta (con sus subcarpetas) en Amazon
- * POST /api/backup/remove    path= [trash=1] [node=]: dejar de hacerlo; con trash=1 también se borra de
- *                            Amazon lo copiado (a su papelera); node= la carpeta de Amazon, si se sabe
- * POST /api/backup/sync      repasar ya
- * GET  /api/google           traer de Google Fotos (GoogleImport): ¿configurado?, clientId y la importación en curso
- * POST /api/google/setup     client=&secret=: el cliente OAuth de Google Cloud;  POST /api/google/reset: olvidarlo
- * POST /api/google/start     code=&verifier=&redirect=&path=: canjea el permiso y abre el selector de Google Fotos
- * POST /api/google/cancel    parar;  POST /api/google/clear: olvidar la importación terminada
- * POST /api/google/auth      path=: (web) dirección de Google para dar permiso;  POST /api/google/code url=: la de vuelta
  *
  * Todo va cifrado con HTTPS (certificado propio del box, ver Tls.java). Si alguien escribe la
  * dirección con http://, se le redirige a https://. En Config.WEB_PORT se sirve lo mismo con un
@@ -122,7 +110,7 @@ final class HttpServer {
         if (running) return;
         Users.forgetOldWebSessions(ctx);
         EchoSync.start(ctx);
-        Backup.start(ctx);
+        Leftovers.clean(ctx);
         SSLContext tls = Tls.context(ctx.getFilesDir());
         try {
             wrapTls = SSLSocketFactory.class.getMethod("createSocket", Socket.class, InputStream.class, boolean.class);
@@ -585,10 +573,6 @@ final class HttpServer {
             amazon(ip, method, path, user, password, params, out);
             return;
         }
-        if (path.equals("/api/google") || path.startsWith("/api/google/")) {
-            google(method, path, user, params, available ? st : null, out);
-            return;
-        }
         if (!available) {
             error(out, 503, st == null
                     ? "El box no tiene ningún disco configurado. Ábrelo en la tele y elige la carpeta del disco USB."
@@ -615,10 +599,6 @@ final class HttpServer {
         Shares.Access acc = Shares.resolve(ctx, user, rel);
         if (acc == null) {
             error(out, 404, "Esa carpeta ya no está compartida contigo");
-            return;
-        }
-        if (path.equals("/api/backup") || path.startsWith("/api/backup/")) {
-            backup(st, method, path, user, rel, acc, params, out);
             return;
         }
         if (acc.virtualRoot) {
@@ -681,9 +661,6 @@ final class HttpServer {
         } else if (path.equals("/api/upload") && (method.equals("PUT") || method.equals("POST"))) {
             upload(st, dirRel, params, body, contentLength, out);
             if (dirRel.equals(acc.owner + "/" + EchoSync.FOLDER)) EchoSync.kick(ctx, acc.owner);
-            if (Backup.of(ctx, acc.owner, dirRel.substring(acc.owner.length()).replaceFirst("^/", "")) != null) {
-                Backup.kick(ctx, acc.owner);
-            }
         } else if (path.equals("/api/echo")) {
             if (!method.equals("POST")) {
                 error(out, 405, "Usa POST");
@@ -827,7 +804,6 @@ final class HttpServer {
                 for (String n : names) {
                     st.delete(d, n);
                     Shares.deleted(ctx, user, rel.isEmpty() ? n : rel + "/" + n);
-                    Backup.deleted(ctx, user, rel.isEmpty() ? n : rel + "/" + n);
                     Favorites.deleted(ctx, dirRel + "/" + n);
                     Geo.deleted(ctx, dirRel + "/" + n);
                     ok++;
@@ -855,7 +831,6 @@ final class HttpServer {
                 for (String n : names) {
                     String fin = st.move(d, n, dest);
                     Shares.moved(ctx, user, rel.isEmpty() ? n : rel + "/" + n, to.isEmpty() ? fin : to + "/" + fin);
-                    Backup.moved(ctx, user, rel.isEmpty() ? n : rel + "/" + n, to.isEmpty() ? fin : to + "/" + fin);
                     Favorites.moved(ctx, dirRel + "/" + n, (to.isEmpty() ? user : user + "/" + to) + "/" + fin);
                     Geo.moved(ctx, dirRel + "/" + n, (to.isEmpty() ? user : user + "/" + to) + "/" + fin);
                     arr.put(fin);
@@ -873,7 +848,6 @@ final class HttpServer {
                     return;
                 }
                 Shares.moved(ctx, user, rel.isEmpty() ? names.get(0) : rel + "/" + names.get(0), rel.isEmpty() ? nn : rel + "/" + nn);
-                Backup.moved(ctx, user, rel.isEmpty() ? names.get(0) : rel + "/" + names.get(0), rel.isEmpty() ? nn : rel + "/" + nn);
                 Favorites.moved(ctx, dirRel + "/" + names.get(0), dirRel + "/" + nn);
                 Geo.moved(ctx, dirRel + "/" + names.get(0), dirRel + "/" + nn);
                 o.put("name", nn);
@@ -901,8 +875,8 @@ final class HttpServer {
             return;
         }
         // cambiar de cuenta de Amazon (o quitarla) pide la contraseña de Súbelo: con el móvil de otro
-        // desbloqueado no se pueden llevar sus copias a otra cuenta
-        if (path.equals("/api/amazon/connect") || path.equals("/api/amazon/disconnect") || path.equals("/api/amazon/trust")) {
+        // desbloqueado no se puede cambiar su Echo de cuenta
+        if (path.equals("/api/amazon/connect") || path.equals("/api/amazon/disconnect")) {
             if (password == null) {
                 error(out, 403, "Para cambiar la cuenta de Amazon hace falta tu contraseña de Súbelo. "
                         + "Si no te la pide, actualiza la app del móvil.");
@@ -952,9 +926,6 @@ final class HttpServer {
             } else if (path.equals("/api/amazon/sync")) {
                 EchoSync.kick(ctx, user);
                 json(out, 200, EchoSync.statusJson(ctx, user));
-            } else if (path.equals("/api/amazon/trust")) {
-                EchoSync.trust(ctx, user);
-                json(out, 200, Backup.statusJson(ctx, user));
             } else if (path.equals("/api/amazon/disconnect")) {
                 EchoSync.disconnect(ctx, user);
                 json(out, 200, EchoSync.statusJson(ctx, user));
@@ -963,128 +934,6 @@ final class HttpServer {
             }
         } catch (IOException e) {
             error(out, 502, e.getMessage() == null ? "No se pudo hablar con Amazon" : e.getMessage());
-        }
-    }
-
-    // ---------- copia de seguridad en Amazon Fotos ----------
-
-    private void backup(Store st, String method, String path, String user, String rel, Shares.Access acc,
-                        Map<String, String> params, OutputStream out) throws IOException, JSONException {
-        if (path.equals("/api/backup")) {
-            json(out, 200, Backup.statusJson(ctx, user));
-            return;
-        }
-        if (!method.equals("POST")) {
-            error(out, 405, "Usa POST");
-            return;
-        }
-        if (path.equals("/api/backup/sync")) {
-            Backup.kick(ctx, user);
-            json(out, 200, Backup.statusJson(ctx, user));
-            return;
-        }
-        boolean add = path.equals("/api/backup/add");
-        if (!add && !path.equals("/api/backup/remove")) {
-            error(out, 404, "No encontrado");
-            return;
-        }
-        if (rel.isEmpty() || acc.virtualRoot || !acc.own || Favorites.isVirtual(rel)) {
-            error(out, 400, "Elige una carpeta tuya");
-            return;
-        }
-        if (add) {
-            if (st.dir(acc.storeRel, false) == null) {
-                error(out, 404, "La carpeta no existe");
-                return;
-            }
-            String now = Backup.of(ctx, user, rel);
-            if ("inside".equals(now)) {
-                error(out, 400, "Esta carpeta ya va en la copia: está dentro de otra que la tiene");
-                return;
-            }
-            try {
-                Backup.add(ctx, user, rel);
-            } catch (IOException e) {
-                error(out, 409, e.getMessage()); // sin Amazon conectado
-                return;
-            }
-        } else {
-            try {
-                // trash=1: borrar también de Amazon (la app de la 2.22 no lo manda: solo deja de copiar)
-                Backup.remove(ctx, user, rel, params.get("node"), "1".equals(params.get("trash")));
-            } catch (IOException e) {
-                error(out, 409, e.getMessage()); // está dentro de otra marcada
-                return;
-            }
-        }
-        json(out, 200, Backup.statusJson(ctx, user));
-    }
-
-    // ---------- traer de Google Fotos ----------
-
-    private void google(String method, String path, String user, Map<String, String> params, Store st, OutputStream out)
-            throws IOException, JSONException {
-        if (path.equals("/api/google")) {
-            json(out, 200, GoogleImport.statusJson(ctx, user));
-            return;
-        }
-        if (!method.equals("POST")) {
-            error(out, 405, "Usa POST");
-            return;
-        }
-        // los fallos de Google van como 502 (o 400): el 401 lo reserva la app para «sesión de Súbelo caducada»
-        try {
-            if (path.equals("/api/google/setup")) {
-                GoogleImport.setup(ctx, params.get("client"), params.get("secret"));
-            } else if (path.equals("/api/google/reset")) {
-                GoogleImport.cancel(user);
-                GoogleImport.reset(ctx);
-            } else if (path.equals("/api/google/cancel")) {
-                GoogleImport.cancel(user);
-                GoogleImport.webForget(user);
-            } else if (path.equals("/api/google/clear")) {
-                GoogleImport.clear(user);
-            } else if (path.equals("/api/google/start") || path.equals("/api/google/auth")) {
-                boolean web = path.equals("/api/google/auth"); // la web: primero la dirección de Google
-                String code = params.get("code"), verifier = params.get("verifier"), redirect = params.get("redirect");
-                if (!web && (code == null || code.isEmpty() || code.length() > 2000 || verifier == null
-                        || !verifier.matches("[A-Za-z0-9._~-]{43,128}")
-                        || redirect == null || !redirect.matches("http://(127\\.0\\.0\\.1|localhost)(:[0-9]{1,5})?/?"))) {
-                    error(out, 400, "Petición de Google incompleta");
-                    return;
-                }
-                if (st == null) {
-                    error(out, 503, "El disco USB no está disponible. ¿Está conectado al box?");
-                    return;
-                }
-                String rel = cleanPath(params.get("path"));
-                Shares.Access acc = Shares.resolve(ctx, user, rel);
-                if (acc == null || acc.virtualRoot) {
-                    error(out, 404, "Elige una carpeta tuya o una que te hayan compartido para subir");
-                    return;
-                }
-                if (!acc.own && !acc.canAdd()) {
-                    error(out, 403, "Esta carpeta es de " + acc.owner + " y solo te deja verla.");
-                    return;
-                }
-                if (web) {
-                    JSONObject o = GoogleImport.statusJson(ctx, user);
-                    o.put("authUrl", GoogleImport.webAuthUrl(ctx, user, acc.owner, acc.storeRel, rel));
-                    json(out, 200, o);
-                    return;
-                }
-                GoogleImport.start(ctx, user, acc.owner, acc.storeRel, rel, code, verifier, redirect);
-            } else if (path.equals("/api/google/code")) {
-                GoogleImport.webFinish(ctx, user, params.get("url"));
-            } else {
-                error(out, 404, "No encontrado");
-                return;
-            }
-            json(out, 200, GoogleImport.statusJson(ctx, user));
-        } catch (GoogleImport.GoogleException e) {
-            error(out, e.code == 400 ? 400 : 502, e.getMessage());
-        } catch (IOException e) {
-            error(out, 502, e.getMessage() == null ? "No se pudo hablar con Google" : e.getMessage());
         }
     }
 
@@ -1464,8 +1313,6 @@ final class HttpServer {
         o.put("access", acc.own ? "own" : acc.mode);
         o.put("owner", acc.owner);
         if (acc.own && !rel.isEmpty()) o.put("sharedWith", new JSONObject(Shares.outgoing(ctx, user, rel)));
-        String bk = acc.own ? Backup.of(ctx, user, rel) : null;
-        if (bk != null) o.put("backup", bk);
     }
 
     /** La carpeta especial con lo que te han compartido. */

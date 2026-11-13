@@ -219,29 +219,6 @@ final class Amazon {
     }
 
     /**
-     * Lleva a la papelera de Amazon Fotos (de ahí se borra sola a los 90 días). Una carpeta se
-     * lleva con todo lo que tiene dentro.
-     */
-    void trash(List<String> ids) throws IOException {
-        for (int from = 0; from < ids.size(); from += 50) {
-            try {
-                JSONObject body = new JSONObject();
-                body.put("recurse", "true");
-                body.put("op", "add");
-                body.put("filters", "");
-                body.put("conflictResolution", "RENAME");
-                body.put("value", new JSONArray(ids.subList(from, Math.min(ids.size(), from + 50))));
-                body.put("resourceVersion", "V2");
-                body.put("ContentType", "JSON");
-                Resp r = request("PATCH", drive + "/trash", "application/json", body.toString().getBytes("UTF-8"), null, -1);
-                if (r.code / 100 != 2) throw fail(r);
-            } catch (JSONException e) {
-                throw new IOException(e.getMessage());
-            }
-        }
-    }
-
-    /**
      * Sube una foto a la carpeta y devuelve su identificador en Amazon. Si ya estaba (misma foto),
      * devuelve la que había; si hay otra distinta con ese nombre, la sube con otro nombre.
      */
@@ -268,8 +245,8 @@ final class Amazon {
     private static volatile boolean noCopies;
 
     /**
-     * copy: que la suba aunque la misma foto ya esté en otra carpeta de la cuenta (para la copia de
-     * seguridad: si no, Amazon la deja donde estaba y no entra en la carpeta).
+     * copy: que la suba aunque la misma foto ya esté en otra carpeta de la cuenta (si no, Amazon la
+     * deja donde estaba y no entra en la carpeta).
      */
     Uploaded uploadNode(String parentId, String name, Opener data, long size, boolean copy) throws IOException {
         String tryName = name;
@@ -349,15 +326,6 @@ final class Amazon {
             return null;
         }
         throw fail(r);
-    }
-
-    /**
-     * Oculta una foto en Amazon Fotos: deja de salir en la línea de tiempo, en los recuerdos y en
-     * el Echo (sigue en su carpeta y en «Ocultos», para quien entre con esa cuenta).
-     * Si Amazon no deja tocar esa foto, falla con su código (403, 404…), no con 401.
-     */
-    void hide(String nodeId) throws IOException {
-        setHidden(nodeId, true);
     }
 
     void setHidden(String nodeId, boolean hidden) throws IOException {
