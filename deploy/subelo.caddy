@@ -1,0 +1,8 @@
+# Se copia a /opt/neux/caddy/sites/ en el VPS. Caddy saca el certificado solo.
+subelo.neuxmatrix.es {
+	encode gzip
+	request_body {
+		max_size 30MB
+	}
+	reverse_proxy subelo:8080
+}

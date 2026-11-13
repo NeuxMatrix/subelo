@@ -1,0 +1,14 @@
+{
+  "name": "web-proyecto",
+  "private": true,
+  "type": "module",
+  "description": "Web de proyecto de Neux Matrix: ficha, descargas, app web y panel con entrada por Google o email + contraseña.",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "start": "node servidor.js",
+    "test": "node --test pruebas/*.test.js"
+  },
+  "dependencies": {
+    "bcryptjs": "3.0.3"
+  }
+}

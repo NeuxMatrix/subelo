@@ -1,0 +1,19 @@
+# Se ejecuta en el VPS desde /opt/neux/apps/subelo/.
+# Proyecto privado de Fer: sin base de datos. Cuentas, tareas, notas y documentos
+# viven en ficheros dentro del volumen "subelo-datos" (entra en la copia nocturna).
+services:
+  subelo:
+    image: ghcr.io/neuxmatrix/subelo:${TAG:-latest}
+    container_name: subelo
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - subelo-datos:/datos
+    networks: [web]
+
+volumes:
+  subelo-datos:
+
+networks:
+  web:
+    external: true
