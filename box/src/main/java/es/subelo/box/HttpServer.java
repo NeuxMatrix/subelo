@@ -299,6 +299,14 @@ final class HttpServer {
         while (running) {
             try {
                 final Socket s = ss.accept();
+                if (!Net.fromHome(s.getInetAddress())) { // solo la red de casa: lo de fuera, ni contestar
+                    Log.w(TAG, "conexión de fuera de casa rechazada: " + s.getInetAddress());
+                    try {
+                        s.close();
+                    } catch (IOException ignored) {
+                    }
+                    continue;
+                }
                 s.setSoTimeout(120000);
                 pool.execute(new Runnable() {
                     @Override
