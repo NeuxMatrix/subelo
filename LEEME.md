@@ -12,6 +12,15 @@
 
 No hace falta root ni Internet: todo va por tu red local.
 
+
+## Web: https://subelo.neuxmatrix.es
+
+Ficha privada del proyecto (carpeta `web/`): los dos APK de la última versión publicada
+para descargarlos, cómo se usa y un panel con tareas, notas y documentos. Se entra con
+Google o con email y contraseña; solo entra hola@neuxmatrix.es y cualquier otra cuenta
+espera a que Fer la apruebe en la Torre (Sistema › Accesos). Se redespliega sola cuando
+«Publicar apps» saca versión (`.github/workflows/desplegar.yml`). Pruebas: `cd web && npm ci && npm test`.
+
 ## Novedades: álbumes, carpetas con portada y mapa
 
 - **Mapa con puntos en vez de miniaturas.** Cada sitio con fotos es un punto redondo con el número de fotos (morado lo tuyo, naranja lo del otro). Al pulsarlo se abre su carpeta (en el móvil, en «Mis fotos por carpetas»). Si en ese sitio hay fotos de varias carpetas, sale abajo una lista para elegir cuál abrir, con «▶ Ver» para ver solo las fotos de ese sitio. Un grupo de puntos lejanos se acerca al pulsarlo. También se ha arreglado que en la web del móvil al tocar el mapa se moviera la página y no se abriera nada. Hay que actualizar el box y la app del móvil (el móvil usa su propia copia del mapa).

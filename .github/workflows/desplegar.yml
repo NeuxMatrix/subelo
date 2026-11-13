@@ -1,0 +1,135 @@
+# Despliega la web del proyecto en https://subelo.neuxmatrix.es (VPS de AlexHost).
+# Secrets del repositorio:
+#   VPS_SSH_KEY            clave privada del usuario deploy del VPS (propia de este repo)
+#   GOOGLE_CLIENT_ID       cliente OAuth común «Neux Matrix login»
+#   GOOGLE_CLIENT_SECRET   ídem
+# Los APK salen de la última release (la crea el workflow «Publicar apps»).
+name: Desplegar en el VPS
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['box/**', 'movil/**', 'diseno/**', 'compilar-sin-android-studio.sh', '.github/workflows/publicar.yml']
+  # Cuando «Publicar apps» saca una versión nueva, la web se redespliega con esos APK.
+  workflow_run:
+    workflows: [Publicar apps]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: despliegue
+  cancel-in-progress: false
+
+env:
+  APP: subelo
+  IMAGEN: ghcr.io/neuxmatrix/subelo
+  VPS: 132.243.166.66
+
+jobs:
+  desplegar:
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Comprobar el código
+        working-directory: web
+        run: |
+          npm ci
+          npm test
+          bash -n ../deploy/arrancar.sh ../deploy/poner-claves.sh ../deploy/comprobar.sh
+
+      - name: Traer los APK de la última versión publicada
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download --repo "$GITHUB_REPOSITORY" --pattern '*.apk' --dir web/descargas --clobber \
+            || echo "::warning::No hay versión publicada todavía: la web sale sin descargas"
+          ls -l web/descargas/
+
+      - name: Comprobar que está la llave del VPS
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          if [ -z "$VPS_SSH_KEY" ]; then
+            echo "::error::Falta el secret VPS_SSH_KEY en este repo: sin él no se puede desplegar"
+            exit 1
+          fi
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Construir y subir la imagen
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.IMAGEN }}:latest
+            ${{ env.IMAGEN }}:${{ github.sha }}
+
+      - name: Preparar el acceso SSH al VPS
+        run: |
+          install -m 700 -d ~/.ssh ~/bin
+          printf '%s\n' "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/vps
+          chmod 600 ~/.ssh/vps
+          ssh-keyscan -H "$VPS" >> ~/.ssh/known_hosts 2>/dev/null
+          # El VPS corta a ratos conexiones SSH («Connection reset»): ssh y scp se repiten hasta 5 veces.
+          for h in ssh scp; do
+            printf '#!/usr/bin/env bash\nfor i in 1 2 3 4 5; do /usr/bin/%s -i ~/.ssh/vps "$@"; c=$?; [ $c -ne 255 ] && exit $c; echo "  reintento $i de %s" >&2; sleep 10; done; exit 255\n' "$h" "$h" > ~/bin/$h
+            chmod +x ~/bin/$h
+          done
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+
+      - name: Copiar los ficheros de despliegue
+        run: |
+          ssh deploy@"$VPS" "mkdir -p /opt/neux/apps/$APP"
+          scp -r deploy/. deploy@"$VPS":/opt/neux/apps/$APP/
+
+      - name: Arrancar en el VPS
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | ssh deploy@"$VPS" \
+            "bash /opt/neux/apps/$APP/arrancar.sh $APP ${{ github.sha }} ${{ github.actor }}"
+
+      - name: Pasar las claves de la app al VPS
+        # Los valores viajan por la entrada estándar del ssh, nunca por la línea de
+        # órdenes ni por los logs. Si cambia alguno, poner-claves.sh recrea el contenedor.
+        env:
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+        run: |
+          [ -n "$GOOGLE_CLIENT_ID" ] && [ -n "$GOOGLE_CLIENT_SECRET" ] || echo "::warning::Faltan GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET: no saldrá el botón de Google"
+          for clave in GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET; do
+            valor="${!clave}"
+            [ -n "$valor" ] && printf '%s=%s\n' "$clave" "$valor"
+          done | ssh deploy@"$VPS" "bash /opt/neux/apps/$APP/poner-claves.sh"
+
+      - name: Comprobar la app dentro del VPS
+        run: ssh deploy@"$VPS" "bash /opt/neux/apps/$APP/comprobar.sh $APP http://127.0.0.1:8080/salud"
+
+      - name: Comprobar que responden todos los dominios
+        run: |
+          for d in $(grep -E '^[a-z0-9.-]+ *\{' deploy/$APP.caddy | sed 's/ *{.*//'); do
+            ips=$(getent ahostsv4 "$d" | awk '{print $1}' | sort -u | tr '\n' ' ')
+            if [[ " $ips" != *" $VPS "* ]]; then
+              echo "::warning::El DNS de $d todavía no apunta al VPS (apunta a: ${ips:-nada})"
+              continue
+            fi
+            curl -fsS --retry 12 --retry-delay 5 --retry-all-errors "https://$d/salud"; echo
+            curl -fsS -o /dev/null -w "$d: HTTP %{http_code}\n" "https://$d/entrar"
+          done

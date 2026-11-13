@@ -1,0 +1,40 @@
+{
+  "clave": "subelo",
+  "nombre": "Súbelo",
+  "subtitulo": "Súbelo (privado)",
+  "color": "#7048e8",
+  "descripcion": "El box Sagemcom como disco de fotos de casa: el móvil sube fotos y vídeos al disco USB del box por el Wi-Fi de casa, y desde el ordenador se ve todo en el navegador.",
+  "descargas": [
+    {
+      "titulo": "Súbelo (móvil)",
+      "archivo": "Subelo-movil.apk",
+      "texto": "Subir fotos y vídeos, ver el disco, subida automática en casa"
+    },
+    {
+      "titulo": "Súbelo Servidor (box)",
+      "archivo": "Subelo-Servidor-box.apk",
+      "texto": "Para el box Sagemcom: guarda en el disco USB y se arranca solo"
+    }
+  ],
+  "secciones": [
+    {
+      "titulo": "Cómo se usa",
+      "texto": [
+        "En el box: instala «Súbelo Servidor». Al encenderse enseña en la tele su dirección y los usuarios.",
+        "En el móvil: instala «Súbelo». Encuentra el box solo cuando estás en el Wi-Fi de casa.",
+        "En el ordenador: abre en el navegador la dirección que sale en la tele (https://IP-del-box:8765). Solo funciona dentro de casa: el box no está en Internet.",
+        "Las apps del box y del móvil miran la última versión y ofrecen actualizarse solas."
+      ]
+    }
+  ],
+  "enlaces": [
+    {
+      "titulo": "Código en GitHub",
+      "url": "https://github.com/NeuxMatrix/subelo"
+    },
+    {
+      "titulo": "Versiones publicadas",
+      "url": "https://github.com/NeuxMatrix/subelo/releases"
+    }
+  ]
+}
