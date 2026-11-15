@@ -24,8 +24,9 @@ export const config = {
   datos: resolve(env.DATOS_DIR || join(AQUI, '..', 'datos')),
   descargas: resolve(env.DESCARGAS_DIR || join(AQUI, 'descargas')),
   appWeb: resolve(env.APP_WEB_DIR || join(AQUI, 'app-web')),
-  googleId: env.GOOGLE_CLIENT_ID || '',
-  googleSecreto: env.GOOGLE_CLIENT_SECRET || '',
+  // Sin BOM ni espacios: un secret puesto desde PowerShell puede traer un BOM invisible.
+  googleId: String(env.GOOGLE_CLIENT_ID || '').replace(/^\uFEFF/, '').trim(),
+  googleSecreto: String(env.GOOGLE_CLIENT_SECRET || '').replace(/^\uFEFF/, '').trim(),
   torre: String(env.TORRE_INTERNA || 'http://torre:8080').replace(/\/$/, ''),
   proyecto: JSON.parse(readFileSync(env.PROYECTO_JSON || join(AQUI, 'proyecto.json'), 'utf8')),
 };

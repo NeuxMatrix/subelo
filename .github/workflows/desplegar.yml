@@ -123,6 +123,10 @@ jobs:
           [ -n "$GOOGLE_CLIENT_ID" ] && [ -n "$GOOGLE_CLIENT_SECRET" ] || echo "::warning::Faltan GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET: no saldrá el botón de Google"
           for clave in GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET; do
             valor="${!clave}"
+            # Sin BOM, \r ni espacios: un secret puesto desde PowerShell lleva un BOM
+            # invisible delante y Google responde «invalid_client».
+            valor=${valor#$'\uFEFF'}; valor=${valor//$'\r'/}; valor=${valor//$'\n'/}
+            valor="${valor#"${valor%%[![:space:]]*}"}"; valor="${valor%"${valor##*[![:space:]]}"}"
             [ -n "$valor" ] && printf '%s=%s\n' "$clave" "$valor"
           done | ssh deploy@"$VPS" "bash /opt/neux/apps/$APP/poner-claves.sh"
 
